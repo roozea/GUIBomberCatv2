@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Importaciones locales
 try:
-    from ui.state import StateManager, LogEntry, LogLevel, SystemStatus
+    from ui.state import StateManager, LogEntry, LogLevel
     from ui.components.dashboard_view import DashboardView
     from ui.websocket_manager import WSManager
 except ImportError as e:
