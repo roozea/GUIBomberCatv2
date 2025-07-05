@@ -60,7 +60,7 @@ class SimpleDashboard:
         
         # Configurar tema
         page.theme = ft.Theme(
-            color_scheme_seed=ft.colors.BLUE,
+            color_scheme_seed=ft.Colors.BLUE,
             use_material3=True,
         )
         
@@ -71,19 +71,17 @@ class SimpleDashboard:
         page.window_min_height = 600
         
         # Crear WebSocket manager
-        self.ws_manager = WSManager("ws://localhost:8001/ws")
+        self.ws_manager = WSManager("ws://localhost:8000/ws")
         
         # Crear vista del dashboard
         self.dashboard_view = DashboardView(self.state_manager, self.ws_manager)
         
         # Agregar log inicial
-        initial_log = LogEntry(
-            timestamp=time.time(),
-            level=LogLevel.INFO,
-            message="Dashboard iniciado correctamente",
-            source="app"
+        await self.state_manager.add_log(
+            LogLevel.INFO,
+            "Dashboard iniciado correctamente",
+            "app"
         )
-        self.state_manager.add_log_entry(initial_log)
         
         # Intentar conectar WebSocket con timeout de 1 segundo
         await self._try_websocket_connection_with_timeout()
@@ -98,27 +96,27 @@ class SimpleDashboard:
         try:
             # Intentar conectar con timeout de 1 segundo
             connection_task = asyncio.create_task(self._connect_websocket())
-            await asyncio.wait_for(connection_task, timeout=1.0)
+            await asyncio.wait_for(connection_task, timeout=2.0)
             
         except asyncio.TimeoutError:
             logger.warning("Timeout conectando WebSocket - mostrando banner offline")
             print("⚠️ [DEBUG] Timeout WebSocket - mostrando banner offline")
-            self._show_backend_offline_banner()
+            await self._show_backend_offline_banner()
             
         except Exception as e:
             logger.warning(f"Error conectando WebSocket: {e}")
             print(f"⚠️ [DEBUG] Error WebSocket: {e}")
-            self._show_backend_offline_banner()
+            await self._show_backend_offline_banner()
             
-    def _show_backend_offline_banner(self):
+    async def _show_backend_offline_banner(self):
         """Muestra banner de backend offline."""
         if self.page:
             offline_banner = ft.Banner(
-                bgcolor=ft.colors.ORANGE_100,
-                leading=ft.Icon(ft.icons.WIFI_OFF, color=ft.colors.ORANGE, size=40),
+                bgcolor=ft.Colors.ORANGE_100,
+                leading=ft.Icon(ft.Icons.WIFI_OFF, color=ft.Colors.ORANGE, size=40),
                 content=ft.Text(
                     "⚠️ Backend offline - Ejecutando en modo local. Inicia el backend para funcionalidad completa.",
-                    color=ft.colors.ORANGE_800
+                    color=ft.Colors.ORANGE_800
                 ),
                 actions=[
                     ft.TextButton("Reintentar", on_click=lambda _: self._retry_connection()),
@@ -130,13 +128,11 @@ class SimpleDashboard:
             self.page.update()
             
         # Agregar log de modo offline
-        offline_log = LogEntry(
-            timestamp=time.time(),
-            level=LogLevel.WARNING,
-            message="Ejecutando en modo offline - Backend no disponible",
-            source="websocket"
+        await self.state_manager.add_log(
+            LogLevel.WARNING,
+            "Ejecutando en modo offline - Backend no disponible",
+            "websocket"
         )
-        self.state_manager.add_log_entry(offline_log)
         
     def _retry_connection(self):
         """Reintenta la conexión WebSocket."""
@@ -150,39 +146,35 @@ class SimpleDashboard:
             asyncio.create_task(self._connect_websocket())
         except Exception as e:
             logger.warning(f"No se pudo iniciar conexión WebSocket: {e}")
-            self._show_backend_offline_banner()
+            asyncio.create_task(self._show_backend_offline_banner())
             
     async def _connect_websocket(self):
         """Conecta al WebSocket de forma asíncrona."""
         try:
             if await self.ws_manager.connect():
-                self.state_manager.update_websocket_status(True)
+                await self.state_manager.update_websocket_status(True)
                 
-                success_log = LogEntry(
-                    timestamp=time.time(),
-                    level=LogLevel.INFO,
-                    message="Conectado al backend exitosamente",
-                    source="websocket"
+                await self.state_manager.add_log(
+                    LogLevel.INFO,
+                    "Conectado al backend exitosamente",
+                    "websocket"
                 )
-                self.state_manager.add_log_entry(success_log)
                 
                 # Suscribirse a mensajes
                 self.ws_manager.subscribe(self._handle_websocket_message)
                 
             else:
-                self.state_manager.update_websocket_status(False)
+                await self.state_manager.update_websocket_status(False)
                 
-                error_log = LogEntry(
-                    timestamp=time.time(),
-                    level=LogLevel.ERROR,
-                    message="No se pudo conectar al backend",
-                    source="websocket"
+                await self.state_manager.add_log(
+                    LogLevel.ERROR,
+                    "No se pudo conectar al backend",
+                    "websocket"
                 )
-                self.state_manager.add_log_entry(error_log)
                 
         except Exception as e:
             logger.error(f"Error conectando WebSocket: {e}")
-            self.state_manager.update_websocket_status(False)
+            await self.state_manager.update_websocket_status(False)
             
     def _handle_websocket_message(self, message):
         """Maneja mensajes del WebSocket."""
@@ -197,102 +189,43 @@ class SimpleDashboard:
 
 async def dashboard_app(page: ft.Page):
     """Función principal del dashboard (async)."""
-    print("🔄 [DEBUG] Entrando a dashboard_app...")
-    logger.info("🔄 Entrando a dashboard_app...")
+    print("🚀 UI init")
+    logger.info("🚀 UI init")
     
-    try:
-        logger.info("Iniciando aplicación dashboard...")
-        print("🔄 [DEBUG] Iniciando aplicación dashboard...")
-        
-        # Agregar widget de confirmación de carga UI
-        loading_indicator = ft.Container(
-            content=ft.Column([
-                ft.ProgressRing(),
-                ft.Text("Cargando Dashboard...", size=16)
-            ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+    # Configurar página básica
+    page.title = "BomberCat Dashboard"
+    page.theme_mode = ft.ThemeMode.DARK
+    
+    # Mostrar mensaje HELLO simple
+    hello_text = ft.Text(
+        "HELLO",
+        size=48,
+        weight=ft.FontWeight.BOLD,
+        color=ft.Colors.GREEN,
+        text_align=ft.TextAlign.CENTER
+    )
+    
+    page.add(
+        ft.Container(
+            content=hello_text,
             alignment=ft.alignment.center,
             expand=True
         )
-        page.add(loading_indicator)
-        page.update()
-        print("🔄 [DEBUG] Loading indicator agregado")
-        
-        # Crear y inicializar dashboard
-        dashboard = SimpleDashboard()
-        await dashboard.initialize_async(page)
-        
-        # Remover loading indicator y mostrar dashboard
-        page.clean()
-        page.add(dashboard.dashboard_view)
-        
-        # Agregar widget de confirmación de que la UI se cargó
-        ui_loaded_banner = ft.Banner(
-            bgcolor=ft.colors.GREEN_100,
-            leading=ft.Icon(ft.icons.CHECK_CIRCLE, color=ft.colors.GREEN, size=40),
-            content=ft.Text("✅ UI loaded - Dashboard cargado correctamente", color=ft.colors.GREEN_800),
-            actions=[
-                ft.TextButton("OK", on_click=lambda _: page.close_banner())
-            ]
-        )
-        page.banner = ui_loaded_banner
-        page.open_banner()
-        page.update()
-        
-        logger.info("Dashboard iniciado exitosamente")
-        print("✅ [DEBUG] Dashboard iniciado exitosamente")
-        
-    except Exception as e:
-        logger.error(f"Error crítico en dashboard: {e}")
-        print(f"❌ [DEBUG] Error crítico en dashboard: {e}")
-        
-        # Mostrar error en la página
-        try:
-            page.clean()
-            error_container = ft.Container(
-                content=ft.Column([
-                    ft.Text("🚨 Error del Dashboard", size=24, weight=ft.FontWeight.BOLD, color=ft.colors.RED),
-                    ft.Text(f"Error: {str(e)}", size=16),
-                    ft.Text("Revisa los logs para más detalles.", size=14, color=ft.colors.GREY_400)
-                ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                alignment=ft.alignment.center,
-                expand=True,
-                padding=20
-            )
-            page.add(error_container)
-            page.update()
-        except Exception as display_error:
-            logger.error(f"Error mostrando mensaje de error: {display_error}")
+    )
     
-    print("🔄 [DEBUG] Saliendo de dashboard_app...")
-    logger.info("🔄 Saliendo de dashboard_app...")
-
-
-async def main_async():
-    """Función principal asíncrona."""
-    try:
-        logger.info("Iniciando aplicación BomberCat Dashboard...")
-        print("🚀 [DEBUG] Iniciando aplicación BomberCat Dashboard...")
-        
-        await ft.app_async(
-            target=dashboard_app,
-            name="bombercat-dashboard",
-            port=8550,
-            view=ft.AppView.WEB_BROWSER,
-            web_renderer=ft.WebRenderer.HTML,
-        )
-        
-    except KeyboardInterrupt:
-        logger.info("Aplicación interrumpida por usuario")
-        print("⏹️ [DEBUG] Aplicación interrumpida por usuario")
-    except Exception as e:
-        logger.error(f"Error ejecutando aplicación: {e}")
-        print(f"❌ [DEBUG] Error ejecutando aplicación: {e}")
-        sys.exit(1)
-        
-def main():
-    """Función principal que ejecuta la versión async."""
-    asyncio.run(main_async())
+    page.update()
+    print("✅ [DEBUG] Dashboard con HELLO mostrado")
+    logger.info("✅ Dashboard con HELLO mostrado")
 
 
 if __name__ == "__main__":
-    main()
+    logger.info("Iniciando aplicación BomberCat Dashboard...")
+    print("🚀 [DEBUG] Iniciando aplicación BomberCat Dashboard...")
+    
+    asyncio.run(ft.app_async(
+        target=dashboard_app,
+        name="dashboard",
+        port=8550,
+        view=ft.AppView.WEB_BROWSER,
+        web_renderer=ft.WebRenderer.HTML,
+    ))

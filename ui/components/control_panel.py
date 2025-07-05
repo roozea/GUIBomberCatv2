@@ -50,10 +50,10 @@ class ControlPanel(ft.Container):
         # Botón de flasheo
         self.flash_button = ft.ElevatedButton(
             text="Flash Device",
-            icon=ft.icons.FLASH_ON,
+            icon=ft.Icons.FLASH_ON,
             style=ft.ButtonStyle(
-                color=ft.colors.WHITE,
-                bgcolor=ft.colors.ORANGE_600,
+                color=ft.Colors.WHITE,
+                bgcolor=ft.Colors.ORANGE_600,
             ),
             on_click=self._on_flash_click,
             disabled=True,
@@ -62,10 +62,10 @@ class ControlPanel(ft.Container):
         # Botones de relay
         self.relay_start_button = ft.ElevatedButton(
             text="Start Relay",
-            icon=ft.icons.PLAY_ARROW,
+            icon=ft.Icons.PLAY_ARROW,
             style=ft.ButtonStyle(
-                color=ft.colors.WHITE,
-                bgcolor=ft.colors.GREEN_600,
+                color=ft.Colors.WHITE,
+                bgcolor=ft.Colors.GREEN_600,
             ),
             on_click=self._on_relay_start_click,
             disabled=True,
@@ -73,10 +73,10 @@ class ControlPanel(ft.Container):
         
         self.relay_stop_button = ft.ElevatedButton(
             text="Stop Relay",
-            icon=ft.icons.STOP,
+            icon=ft.Icons.STOP,
             style=ft.ButtonStyle(
-                color=ft.colors.WHITE,
-                bgcolor=ft.colors.RED_600,
+                color=ft.Colors.WHITE,
+                bgcolor=ft.Colors.RED_600,
             ),
             on_click=self._on_relay_stop_click,
             disabled=True,
@@ -84,7 +84,7 @@ class ControlPanel(ft.Container):
         
         # Botón de escaneo de dispositivos
         self.device_scan_button = ft.IconButton(
-            icon=ft.icons.REFRESH,
+            icon=ft.Icons.REFRESH,
             tooltip="Escanear dispositivos",
             on_click=self._on_device_scan_click,
         )
@@ -94,8 +94,8 @@ class ControlPanel(ft.Container):
             content=ft.Row(
                 [
                     ft.Icon(
-                        ft.icons.CIRCLE,
-                        color=ft.colors.GREY_400,
+                        ft.Icons.CIRCLE,
+                        color=ft.Colors.GREY_400,
                         size=12,
                     ),
                     ft.Text(
@@ -108,21 +108,21 @@ class ControlPanel(ft.Container):
             ),
             padding=ft.padding.symmetric(horizontal=12, vertical=6),
             border_radius=16,
-            bgcolor=ft.colors.with_opacity(0.1, ft.colors.SURFACE_VARIANT),
+            bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.GREY_100),
         )
         
         # Información del dispositivo
         self.device_info_text = ft.Text(
             "Sin dispositivo conectado",
             size=12,
-            color=ft.colors.ON_SURFACE_VARIANT,
+            color=ft.Colors.ON_SURFACE_VARIANT,
         )
         
         # Estado de conexión WebSocket
         self.connection_status = ft.Text(
             "WebSocket: Desconectado",
             size=10,
-            color=ft.colors.ERROR,
+            color=ft.Colors.ERROR,
         )
         
         # Sección de dispositivo
@@ -149,7 +149,7 @@ class ControlPanel(ft.Container):
             ),
             padding=ft.padding.all(16),
             border_radius=8,
-            bgcolor=ft.colors.with_opacity(0.05, ft.colors.SURFACE_VARIANT),
+            bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY_100),
         )
         
         # Sección de relay
@@ -173,7 +173,7 @@ class ControlPanel(ft.Container):
             ),
             padding=ft.padding.all(16),
             border_radius=8,
-            bgcolor=ft.colors.with_opacity(0.05, ft.colors.SURFACE_VARIANT),
+            bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY_100),
         )
         
         # Sección de estado
@@ -192,7 +192,7 @@ class ControlPanel(ft.Container):
             ),
             padding=ft.padding.all(16),
             border_radius=8,
-            bgcolor=ft.colors.with_opacity(0.05, ft.colors.SURFACE_VARIANT),
+            bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY_100),
         )
         
         return ft.Column(
@@ -294,14 +294,14 @@ class ControlPanel(ft.Container):
         
         # Mapear estado a color e icono
         status_config = {
-            SystemStatus.IDLE: (ft.colors.GREY_400, "Inactivo"),
-            SystemStatus.FLASHING: (ft.colors.ORANGE_600, "Flasheando"),
-            SystemStatus.RELAY_RUNNING: (ft.colors.GREEN_600, "Relay Activo"),
-            SystemStatus.ERROR: (ft.colors.RED_600, "Error"),
-            SystemStatus.CONNECTING: (ft.colors.BLUE_600, "Conectando"),
+            SystemStatus.IDLE: (ft.Colors.GREY_400, "Inactivo"),
+            SystemStatus.FLASHING: (ft.Colors.ORANGE_600, "Flasheando"),
+            SystemStatus.RELAY_RUNNING: (ft.Colors.GREEN_600, "Relay Activo"),
+            SystemStatus.ERROR: (ft.Colors.RED_600, "Error"),
+            SystemStatus.CONNECTING: (ft.Colors.BLUE_600, "Conectando"),
         }
         
-        color, text = status_config.get(status, (ft.colors.GREY_400, "Desconocido"))
+        color, text = status_config.get(status, (ft.Colors.GREY_400, "Desconocido"))
         
         # Actualizar contenido del indicador
         row = self.status_indicator.content
@@ -324,10 +324,10 @@ class ControlPanel(ft.Container):
                 info_parts.append(f"MAC: {device.mac_address}")
                 
             self.device_info_text.value = " | ".join(info_parts)
-            self.device_info_text.color = ft.colors.ON_SURFACE
+            self.device_info_text.color = ft.Colors.ON_SURFACE
         else:
             self.device_info_text.value = "Sin dispositivo conectado"
-            self.device_info_text.color = ft.colors.ON_SURFACE_VARIANT
+            self.device_info_text.color = ft.Colors.ON_SURFACE_VARIANT
             
     def _update_connection_status(self):
         """Actualiza el estado de conexión WebSocket."""
@@ -336,10 +336,10 @@ class ControlPanel(ft.Container):
             
         if self.current_state.websocket_connected:
             self.connection_status.value = "WebSocket: Conectado"
-            self.connection_status.color = ft.colors.GREEN_600
+            self.connection_status.color = ft.Colors.GREEN_600
         else:
             self.connection_status.value = "WebSocket: Desconectado"
-            self.connection_status.color = ft.colors.ERROR
+            self.connection_status.color = ft.Colors.ERROR
             
     async def _send_command(self, command: str, data: dict = None):
         """Envía un comando por WebSocket.
