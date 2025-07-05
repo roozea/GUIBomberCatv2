@@ -53,7 +53,7 @@ class DashboardView(ft.Container):
         
         # Toggle de tema
         self.theme_toggle = ft.IconButton(
-            icon=ft.icons.DARK_MODE,
+            icon=ft.Icons.DARK_MODE,
             tooltip="Cambiar tema",
             on_click=self._toggle_theme,
         )
@@ -61,10 +61,10 @@ class DashboardView(ft.Container):
         # Banner de estado de conexión
         self.connection_banner = ft.Container(
             content=ft.Row([
-                ft.Icon(ft.icons.WIFI_OFF, color=ft.colors.WHITE, size=16),
+                ft.Icon(ft.Icons.WIFI_OFF, color=ft.Colors.WHITE, size=16),
                 ft.Text(
                     "Backend offline - Modo de prueba activo",
-                    color=ft.colors.WHITE,
+                    color=ft.Colors.WHITE,
                     size=14,
                     weight=ft.FontWeight.BOLD
                 ),
@@ -72,13 +72,13 @@ class DashboardView(ft.Container):
                 ft.TextButton(
                     "Reconectar",
                     style=ft.ButtonStyle(
-                        color=ft.colors.WHITE,
-                        overlay_color=ft.colors.with_opacity(0.1, ft.colors.WHITE)
+                        color=ft.Colors.WHITE,
+                        overlay_color=ft.Colors.with_opacity(0.1, ft.Colors.WHITE)
                     ),
                     on_click=self._reconnect_websocket
                 )
             ]),
-            bgcolor=ft.colors.ORANGE_600,
+            bgcolor=ft.Colors.ORANGE_600,
             padding=ft.padding.symmetric(horizontal=20, vertical=8),
             visible=False  # Inicialmente oculto
         )
@@ -91,7 +91,7 @@ class DashboardView(ft.Container):
                         "BomberCat Dashboard",
                         size=24,
                         weight=ft.FontWeight.BOLD,
-                        color=ft.colors.PRIMARY,
+                        color=ft.Colors.PRIMARY,
                     ),
                     ft.Container(expand=True),  # Spacer
                     self.theme_toggle,
@@ -99,7 +99,7 @@ class DashboardView(ft.Container):
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
             padding=ft.padding.symmetric(horizontal=20, vertical=16),
-            bgcolor=ft.colors.with_opacity(0.05, ft.colors.SURFACE_VARIANT),
+            bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY_100),
         )
         
         # Tarjetas de métricas
@@ -183,8 +183,8 @@ class DashboardView(ft.Container):
                     content=self._create_metric_card(
                         "Paquetes Relay",
                         "0",
-                        ft.icons.SWAP_HORIZ,
-                        ft.colors.BLUE_600,
+                        ft.Icons.SWAP_HORIZ,
+                        ft.Colors.BLUE_600,
                         "packets"
                     ),
                     col={"sm": 6, "md": 3, "lg": 3},
@@ -195,8 +195,8 @@ class DashboardView(ft.Container):
                     content=self._create_metric_card(
                         "Errores",
                         "0",
-                        ft.icons.ERROR_OUTLINE,
-                        ft.colors.RED_600,
+                        ft.Icons.ERROR_OUTLINE,
+                        ft.Colors.RED_600,
                         "errors"
                     ),
                     col={"sm": 6, "md": 3, "lg": 3},
@@ -207,8 +207,8 @@ class DashboardView(ft.Container):
                     content=self._create_metric_card(
                         "CPU",
                         "0%",
-                        ft.icons.MEMORY,
-                        ft.colors.GREEN_600,
+                        ft.Icons.MEMORY,
+                        ft.Colors.GREEN_600,
                         "cpu"
                     ),
                     col={"sm": 6, "md": 3, "lg": 3},
@@ -219,8 +219,8 @@ class DashboardView(ft.Container):
                     content=self._create_metric_card(
                         "Memoria",
                         "0%",
-                        ft.icons.STORAGE,
-                        ft.colors.ORANGE_600,
+                        ft.Icons.STORAGE,
+                        ft.Colors.ORANGE_600,
                         "memory"
                     ),
                     col={"sm": 6, "md": 3, "lg": 3},
@@ -250,15 +250,15 @@ class DashboardView(ft.Container):
                     ft.Text(
                         title,
                         size=12,
-                        color=ft.colors.ON_SURFACE_VARIANT,
+                        color=ft.Colors.ON_SURFACE_VARIANT,
                     ),
                 ],
                 spacing=8,
             ),
             padding=ft.padding.all(16),
             border_radius=12,
-            bgcolor=ft.colors.with_opacity(0.05, ft.colors.SURFACE_VARIANT),
-            border=ft.border.all(1, ft.colors.with_opacity(0.1, ft.colors.OUTLINE)),
+            bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY_100),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.OUTLINE)),
         )
         
     def _create_logs_view(self) -> ft.Container:
@@ -282,7 +282,7 @@ class DashboardView(ft.Container):
                             ),
                             ft.Container(expand=True),
                             ft.IconButton(
-                                icon=ft.icons.CLEAR_ALL,
+                                icon=ft.Icons.CLEAR_ALL,
                                 tooltip="Limpiar logs",
                                 on_click=self._clear_logs,
                             ),
@@ -291,15 +291,15 @@ class DashboardView(ft.Container):
                     ft.Container(
                         content=self.logs_list,
                         border_radius=8,
-                        bgcolor=ft.colors.with_opacity(0.02, ft.colors.ON_SURFACE),
-                        border=ft.border.all(1, ft.colors.with_opacity(0.1, ft.colors.OUTLINE)),
+                        bgcolor=ft.Colors.with_opacity(0.02, ft.Colors.ON_SURFACE),
+                        border=ft.border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.OUTLINE)),
                     ),
                 ],
                 spacing=8,
             ),
             padding=ft.padding.all(16),
             border_radius=12,
-            bgcolor=ft.colors.with_opacity(0.05, ft.colors.SURFACE_VARIANT),
+            bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY_100),
         )
         
     def _on_state_update(self, state: BomberCatState):
@@ -376,20 +376,20 @@ class DashboardView(ft.Container):
         for log_entry in recent_logs:
             # Color según nivel de log
             color_map = {
-                LogLevel.DEBUG: ft.colors.GREY_600,
-                LogLevel.INFO: ft.colors.BLUE_600,
-                LogLevel.WARNING: ft.colors.ORANGE_600,
-                LogLevel.ERROR: ft.colors.RED_600,
+                LogLevel.DEBUG: ft.Colors.GREY_600,
+                LogLevel.INFO: ft.Colors.BLUE_600,
+                LogLevel.WARNING: ft.Colors.ORANGE_600,
+                LogLevel.ERROR: ft.Colors.RED_600,
             }
             
-            color = color_map.get(log_entry.level, ft.colors.ON_SURFACE)
+            color = color_map.get(log_entry.level, ft.Colors.ON_SURFACE)
             
             log_row = ft.Row(
                 [
                     ft.Text(
                         log_entry.timestamp.strftime("%H:%M:%S"),
                         size=10,
-                        color=ft.colors.ON_SURFACE_VARIANT,
+                        color=ft.Colors.ON_SURFACE_VARIANT,
                         width=60,
                     ),
                     ft.Text(
@@ -402,13 +402,13 @@ class DashboardView(ft.Container):
                     ft.Text(
                         f"[{log_entry.component}]",
                         size=10,
-                        color=ft.colors.ON_SURFACE_VARIANT,
+                        color=ft.Colors.ON_SURFACE_VARIANT,
                         width=80,
                     ),
                     ft.Text(
                         log_entry.message,
                         size=10,
-                        color=ft.colors.ON_SURFACE,
+                        color=ft.Colors.ON_SURFACE,
                         expand=True,
                     ),
                 ],
@@ -423,10 +423,10 @@ class DashboardView(ft.Container):
             return
             
         if self.current_state.dark_theme:
-            self.theme_toggle.icon = ft.icons.LIGHT_MODE
+            self.theme_toggle.icon = ft.Icons.LIGHT_MODE
             self.theme_toggle.tooltip = "Cambiar a tema claro"
         else:
-            self.theme_toggle.icon = ft.icons.DARK_MODE
+            self.theme_toggle.icon = ft.Icons.DARK_MODE
             self.theme_toggle.tooltip = "Cambiar a tema oscuro"
             
     def _toggle_theme(self, e):
@@ -512,19 +512,19 @@ class DashboardView(ft.Container):
         
         if status == "connected":
             self.connection_banner.visible = False
-            self.connection_banner.bgcolor = ft.colors.GREEN_600
+            self.connection_banner.bgcolor = ft.Colors.GREEN_600
             icon_control.name = ft.icons.WIFI
             text_control.value = "Backend conectado"
             
         elif status == "connecting":
             self.connection_banner.visible = True
-            self.connection_banner.bgcolor = ft.colors.BLUE_600
+            self.connection_banner.bgcolor = ft.Colors.BLUE_600
             icon_control.name = ft.icons.WIFI_FIND
             text_control.value = "Conectando al backend..."
             
         elif status == "disconnected":
             self.connection_banner.visible = True
-            self.connection_banner.bgcolor = ft.colors.ORANGE_600
+            self.connection_banner.bgcolor = ft.Colors.ORANGE_600
             icon_control.name = ft.icons.WIFI_OFF
             text_control.value = "Backend offline - Modo de prueba activo"
             

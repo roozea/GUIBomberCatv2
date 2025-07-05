@@ -44,7 +44,7 @@ class LatencyChart(ft.Container):
             content=self._build_content(),
             padding=ft.padding.all(16),
             border_radius=12,
-            bgcolor=ft.colors.with_opacity(0.05, ft.colors.SURFACE_VARIANT)
+            bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY_100)
         )
         
     def _build_content(self):
@@ -55,19 +55,19 @@ class LatencyChart(ft.Container):
                 ft.LineChartData(
                     data_points=[],
                     stroke_width=2,
-                    color=ft.colors.BLUE_400,
+                    color=ft.Colors.BLUE_400,
                     curved=True,
                     stroke_cap_round=True,
                 )
             ],
-            border=ft.border.all(1, ft.colors.with_opacity(0.2, ft.colors.ON_SURFACE)),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.ON_SURFACE)),
             horizontal_grid_lines=ft.ChartGridLines(
-                color=ft.colors.with_opacity(0.1, ft.colors.ON_SURFACE),
+                color=ft.Colors.with_opacity(0.1, ft.Colors.ON_SURFACE),
                 width=1,
                 dash_pattern=[3, 3],
             ),
             vertical_grid_lines=ft.ChartGridLines(
-                color=ft.colors.with_opacity(0.1, ft.colors.ON_SURFACE),
+                color=ft.Colors.with_opacity(0.1, ft.Colors.ON_SURFACE),
                 width=1,
                 dash_pattern=[3, 3],
             ),
@@ -81,7 +81,7 @@ class LatencyChart(ft.Container):
                 title_size=12,
                 labels_size=10,
             ),
-            tooltip_bgcolor=ft.colors.with_opacity(0.8, ft.colors.BLUE_GREY),
+            tooltip_bgcolor=ft.Colors.with_opacity(0.8, ft.Colors.BLUE_GREY),
             min_y=self.min_y,
             max_y=self.max_y,
             expand=True,
@@ -91,24 +91,24 @@ class LatencyChart(ft.Container):
         self.stats_text = ft.Text(
             "Latencia: -- ms | Promedio: -- ms | Máx: -- ms",
             size=12,
-            color=ft.colors.ON_SURFACE_VARIANT,
+            color=ft.Colors.ON_SURFACE_VARIANT,
         )
         
         # Controles adicionales
         controls_row = ft.Row(
             [
                 ft.IconButton(
-                    icon=ft.icons.REFRESH,
+                    icon=ft.Icons.REFRESH,
                     tooltip="Limpiar gráfico",
                     on_click=self._clear_chart,
                 ),
                 ft.IconButton(
-                    icon=ft.icons.ZOOM_OUT,
+                    icon=ft.Icons.ZOOM_OUT,
                     tooltip="Zoom out",
                     on_click=self._zoom_out,
                 ),
                 ft.IconButton(
-                    icon=ft.icons.ZOOM_IN,
+                    icon=ft.Icons.ZOOM_IN,
                     tooltip="Zoom in",
                     on_click=self._zoom_in,
                 ),
@@ -130,7 +130,7 @@ class LatencyChart(ft.Container):
                     content=self.chart,
                     height=300,
                     border_radius=8,
-                    bgcolor=ft.colors.with_opacity(0.05, ft.colors.ON_SURFACE),
+                    bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.ON_SURFACE),
                 ),
             ],
             spacing=10,
@@ -219,7 +219,7 @@ class LatencyChart(ft.Container):
                     ft.LineChartData(
                         data_points=target_points,
                         stroke_width=1,
-                        color=ft.colors.RED_400,
+                        color=ft.Colors.RED_400,
                         curved=False,
                         stroke_dash_pattern=[5, 5],
                     )
