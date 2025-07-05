@@ -78,7 +78,7 @@ class DashboardView(ft.Container):
                     on_click=self._reconnect_websocket
                 )
             ]),
-            bgcolor=ft.colors.ORANGE_600,
+            bgcolor=ft.colors.RED_600,
             padding=ft.padding.symmetric(horizontal=20, vertical=8),
             visible=False  # Inicialmente oculto
         )
@@ -524,7 +524,7 @@ class DashboardView(ft.Container):
             
         elif status == "disconnected":
             self.connection_banner.visible = True
-            self.connection_banner.bgcolor = ft.colors.ORANGE_600
+            self.connection_banner.bgcolor = ft.colors.RED_600
             icon_control.name = ft.icons.WIFI_OFF
             text_control.value = "Backend offline - Modo de prueba activo"
             

@@ -92,7 +92,7 @@ async def dashboard_app(page: ft.Page):
 1. **Verificar que el backend esté corriendo:**
 ```bash
 # Iniciar backend FastAPI
-uvicorn api.main:app --host 0.0.0.0 --port 8001 --reload
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 2. **Verificar URL de WebSocket en UI:**
@@ -102,21 +102,21 @@ En `ui/main.py` línea 60:
 self.ws_manager = WSManager("ws://localhost:8000/ws")
 
 # ✅ Puerto correcto (debe coincidir con backend)
-self.ws_manager = WSManager("ws://localhost:8001/ws")
+self.ws_manager = WSManager("ws://localhost:8000/ws")
 ```
 
 3. **Verificar estado de servicios:**
 ```bash
 # Verificar que el puerto esté en uso
-lsof -i :8001
+lsof -i :8000
 
 # Verificar logs del backend
-curl http://localhost:8001/health
+curl http://localhost:8000/health
 ```
 
 **🔧 Configuración Actual:**
-- Backend: `http://localhost:8001`
-- WebSocket: `ws://localhost:8001/ws`
+- Backend: `http://localhost:8000`
+- WebSocket: `ws://localhost:8000/ws`
 - UI: `http://localhost:8550`
 
 ### 4. 🐛 Error JS en Consola
@@ -133,7 +133,7 @@ curl http://localhost:8001/health
 
    **a) "WebSocket connection failed"**
    ```
-   WebSocket connection to 'ws://localhost:8001/ws' failed
+   WebSocket connection to 'ws://localhost:8000/ws' failed
    ```
    **Solución:** Verificar que el backend esté corriendo (ver punto 3)
 
@@ -200,11 +200,11 @@ async def _on_state_change(self):
 ### Verificar Estado de Servicios
 ```bash
 # Backend API
-curl http://localhost:8001/status
+curl http://localhost:8000/status
 
 # WebSocket (usando wscat)
 npm install -g wscat
-wscat -c ws://localhost:8001/ws
+wscat -c ws://localhost:8000/ws
 
 # UI
 curl http://localhost:8550
@@ -222,11 +222,11 @@ python3 ui/main.py
 ### Verificar Puertos
 ```bash
 # Ver puertos en uso
-netstat -tulpn | grep :8001
+netstat -tulpn | grep :8000
 netstat -tulpn | grep :8550
 
 # En macOS
-lsof -i :8001
+lsof -i :8000
 lsof -i :8550
 ```
 
@@ -256,17 +256,17 @@ def main():
 ```bash
 # .env
 API_HOST=localhost
-API_PORT=8001
+API_PORT=8000
 UI_PORT=8550
-WS_URL=ws://localhost:8001/ws
+WS_URL=ws://localhost:8000/ws
 LOG_LEVEL=INFO
 ```
 
 ## 📋 Checklist de Verificación
 
-- [ ] Backend corriendo en puerto 8001
+- [ ] Backend corriendo en puerto 8000
 - [ ] UI corriendo en puerto 8550
-- [ ] WebSocket URL correcta (ws://localhost:8001/ws)
+- [ ] WebSocket URL correcta (ws://localhost:8000/ws)
 - [ ] Nombre de app sin espacios
 - [ ] DevTools sin errores JS
 - [ ] Logs sin errores críticos
