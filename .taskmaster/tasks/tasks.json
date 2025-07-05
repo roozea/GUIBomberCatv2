@@ -1,0 +1,816 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Setup Project Structure and Core Dependencies",
+        "description": "Initialize the modular Python project structure following Clean Architecture principles with separate packages for each module (bombercat_flash, bombercat_config, etc.)",
+        "details": "Create project structure:\n```\nbombercat-integrator/\n├── core/\n│   ├── __init__.py\n│   ├── entities/\n│   └── use_cases/\n├── adapters/\n│   ├── __init__.py\n│   └── interfaces/\n├── infrastructure/\n│   ├── __init__.py\n│   ├── esptool_adapter.py\n│   └── aws_iot_adapter.py\n├── modules/\n│   ├── bombercat_flash/\n│   ├── bombercat_config/\n│   ├── bombercat_relay/\n│   └── bombercat_mqtt/\n├── api/\n│   └── main.py\n├── ui/\n│   └── dashboard.py\n├── pyproject.toml\n└── requirements.txt\n```\n\nSetup pyproject.toml with Python 3.11, FastAPI 0.115, Flet 0.28, esptool 4.6, pyserial, boto3, awsiotsdk",
+        "testStrategy": "Verify project structure creation, validate pip install -e . works for each module, ensure all dependencies resolve correctly with pip-compile",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Initialize Project Root and Configuration Files",
+            "description": "Create the project root directory structure and initialize core configuration files including pyproject.toml and requirements.txt with specified dependencies",
+            "dependencies": [],
+            "details": "Create bombercat-integrator directory, initialize pyproject.toml with Python 3.11 requirement, project metadata, and dependency specifications (FastAPI==0.115.*, Flet==0.28.*, esptool==4.6.*, pyserial, boto3, awsiotsdk). Set up requirements.txt as a mirror of pyproject.toml dependencies. Add .gitignore with Python-specific patterns and __pycache__ exclusions.",
+            "status": "done",
+            "testStrategy": "Verify pyproject.toml is valid TOML format, ensure pip can install from requirements.txt in a fresh virtual environment"
+          },
+          {
+            "id": 2,
+            "title": "Create Core Domain Layer Structure",
+            "description": "Implement the core package following Clean Architecture principles with entities and use cases subdirectories",
+            "dependencies": [
+              1
+            ],
+            "details": "Create core/ directory with __init__.py, entities/ subdirectory for domain models (e.g., Device, Configuration, FlashJob entities), and use_cases/ subdirectory for business logic interfaces. Each subdirectory should have its own __init__.py. Add README.md in core/ explaining the domain layer's purpose and usage patterns.",
+            "status": "done",
+            "testStrategy": "Ensure all __init__.py files are present and importable, verify core package can be imported from project root"
+          },
+          {
+            "id": 3,
+            "title": "Setup Adapters and Infrastructure Layers",
+            "description": "Create the adapters layer for interfaces and the infrastructure layer for external service implementations",
+            "dependencies": [
+              1
+            ],
+            "details": "Create adapters/ directory with interfaces/ subdirectory containing abstract base classes for ports (e.g., IFlashService, IConfigService interfaces). Create infrastructure/ directory with concrete implementations: esptool_adapter.py (wrapping esptool functionality), aws_iot_adapter.py (AWS IoT Core integration). Each file should contain placeholder classes with proper imports.",
+            "status": "done",
+            "testStrategy": "Verify adapter interfaces can be imported and infrastructure modules load without import errors"
+          },
+          {
+            "id": 4,
+            "title": "Initialize Module Package Structure",
+            "description": "Create the modular package structure for each bombercat module with proper Python package initialization",
+            "dependencies": [
+              1
+            ],
+            "details": "Create modules/ directory with four subdirectories: bombercat_flash/, bombercat_config/, bombercat_relay/, and bombercat_mqtt/. Each module should have __init__.py, a main service file (e.g., flash_service.py), and a README.md explaining the module's purpose. Add version information in each module's __init__.py.",
+            "status": "done",
+            "testStrategy": "Verify each module can be imported as a Python package, check that module paths are correctly resolved"
+          },
+          {
+            "id": 5,
+            "title": "Setup API and UI Entry Points",
+            "description": "Create the FastAPI application entry point and Flet UI dashboard structure with basic boilerplate code",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "details": "Create api/main.py with FastAPI app initialization, basic health check endpoint, and CORS configuration. Create ui/dashboard.py with Flet app initialization and basic page structure. Both files should import from core and modules packages to verify proper project structure. Add __init__.py files to make api/ and ui/ proper Python packages.",
+            "status": "done",
+            "testStrategy": "Run FastAPI app with uvicorn to verify it starts without errors, execute Flet app to ensure UI framework initializes correctly"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Implement Flash Wizard Module - Device Detection",
+        "description": "Create the Flash Wizard service with auto-detection of ESP32-S2 devices across Windows, Mac, and Linux platforms using esptool.py",
+        "details": "```python\n# modules/bombercat_flash/detector.py\nimport esptool\nimport serial.tools.list_ports\nfrom typing import Optional, List\n\nclass DeviceDetector:\n    def __init__(self):\n        self.supported_chips = ['esp32s2']\n    \n    def scan_ports(self) -> List[dict]:\n        ports = []\n        for port in serial.tools.list_ports.comports():\n            if self._is_esp_device(port):\n                ports.append({\n                    'port': port.device,\n                    'description': port.description,\n                    'hwid': port.hwid\n                })\n        return ports\n    \n    def detect_chip(self, port: str) -> Optional[str]:\n        try:\n            esp = esptool.ESPLoader.detect_chip(port)\n            return esp.CHIP_NAME if esp.CHIP_NAME in self.supported_chips else None\n        except Exception:\n            return None\n```\n\nImplement platform-specific detection logic and handle USB permissions",
+        "testStrategy": "Mock serial ports for unit tests, integration test with real ESP32-S2 device, verify 100% detection rate across OS platforms",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Base Device Detector Class with Platform Detection",
+            "description": "Implement the foundational DeviceDetector class with platform-specific initialization and basic port scanning capabilities",
+            "dependencies": [],
+            "details": "Create detector.py with DeviceDetector class that detects the current OS (Windows/Mac/Linux) using platform.system(). Initialize esptool and serial.tools.list_ports. Set up supported_chips list with 'esp32s2'. Implement basic error handling and logging setup.",
+            "status": "done",
+            "testStrategy": "Unit test platform detection on different OS environments using mock. Verify class initialization and basic attribute setup."
+          },
+          {
+            "id": 2,
+            "title": "Implement Cross-Platform Port Scanning Logic",
+            "description": "Develop the scan_ports method to enumerate serial ports across all platforms with proper filtering for ESP devices",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement scan_ports() method using serial.tools.list_ports.comports(). Add platform-specific port filtering: Windows (COM ports), Mac (/dev/cu.* and /dev/tty.*), Linux (/dev/ttyUSB* and /dev/ttyACM*). Create _is_esp_device() helper to identify ESP devices by VID/PID (0x303A for Espressif) or description patterns.",
+            "status": "done",
+            "testStrategy": "Mock serial port listings for each platform. Test filtering logic with various port configurations. Verify ESP device identification."
+          },
+          {
+            "id": 3,
+            "title": "Add ESP32-S2 Chip Detection Functionality",
+            "description": "Implement the detect_chip method to identify connected ESP32-S2 devices using esptool",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement detect_chip(port) method using esptool.ESPLoader.detect_chip(). Add timeout handling (default 3 seconds). Implement retry logic for unreliable connections. Return chip name only if it matches supported_chips list. Handle esptool exceptions gracefully with specific error messages.",
+            "status": "done",
+            "testStrategy": "Mock esptool responses for different chip types. Test timeout and retry mechanisms. Verify correct chip identification and error handling."
+          },
+          {
+            "id": 4,
+            "title": "Implement Platform-Specific USB Permission Handling",
+            "description": "Add USB permission detection and guidance for each platform to help users resolve access issues",
+            "dependencies": [
+              3
+            ],
+            "details": "Create check_port_permissions(port) method. For Linux: check if user is in dialout/uucp groups, provide udev rules guidance. For Mac: detect System Integrity Protection issues, provide driver installation guidance. For Windows: check COM port access, detect driver issues. Return permission status and remediation instructions.",
+            "status": "done",
+            "testStrategy": "Test permission checks with different user configurations. Verify guidance messages are platform-appropriate. Mock permission scenarios."
+          },
+          {
+            "id": 5,
+            "title": "Create Comprehensive Device Detection API",
+            "description": "Build a high-level API that combines all detection features with proper error handling and status reporting",
+            "dependencies": [
+              4
+            ],
+            "details": "Create get_available_devices() method that returns a list of detected ESP32-S2 devices with full metadata (port, chip type, permissions). Add auto_detect_device() for single device scenarios. Implement detailed status codes and messages. Add device_info structure with port, chip, description, permissions, and remediation steps. Include connection test functionality.",
+            "status": "done",
+            "testStrategy": "Integration tests with multiple device scenarios. Test auto-detection logic. Verify complete device information structure. Test error scenarios and status reporting."
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Implement Firmware Download and Verification",
+        "description": "Create service to download official firmware from GitHub releases with SHA-256 checksum verification",
+        "details": "```python\n# modules/bombercat_flash/firmware_manager.py\nimport hashlib\nimport requests\nfrom pathlib import Path\n\nclass FirmwareManager:\n    GITHUB_REPO = 'bombercat/firmware-releases'\n    \n    async def get_latest_release(self) -> dict:\n        url = f'https://api.github.com/repos/{self.GITHUB_REPO}/releases/latest'\n        response = await self.http_client.get(url)\n        return response.json()\n    \n    async def download_firmware(self, version: str, target_path: Path) -> bool:\n        release = await self.get_release(version)\n        firmware_asset = self._find_firmware_asset(release)\n        \n        async with self.http_client.stream('GET', firmware_asset['browser_download_url']) as response:\n            with open(target_path, 'wb') as f:\n                async for chunk in response.aiter_bytes(8192):\n                    f.write(chunk)\n        \n        return self._verify_checksum(target_path, firmware_asset['sha256'])\n    \n    def _verify_checksum(self, file_path: Path, expected_sha256: str) -> bool:\n        sha256_hash = hashlib.sha256()\n        with open(file_path, 'rb') as f:\n            for byte_block in iter(lambda: f.read(4096), b''):\n                sha256_hash.update(byte_block)\n        return sha256_hash.hexdigest() == expected_sha256\n```",
+        "testStrategy": "Mock GitHub API responses, test checksum verification with known files, verify download resumption on network failure",
+        "priority": "high",
+        "dependencies": [
+          2
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create HTTP Client Wrapper with Retry Logic",
+            "description": "Implement an async HTTP client wrapper that handles retries, timeouts, and rate limiting for GitHub API requests",
+            "dependencies": [],
+            "details": "Create an AsyncHTTPClient class that wraps httpx or aiohttp with exponential backoff retry logic, configurable timeouts, and proper error handling. Include rate limit detection from GitHub API headers (X-RateLimit-Remaining) and automatic retry after rate limit reset time.",
+            "status": "done",
+            "testStrategy": "Mock HTTP responses to test retry logic, timeout handling, and rate limit scenarios. Verify proper exponential backoff timing and error propagation."
+          },
+          {
+            "id": 2,
+            "title": "Implement GitHub Release API Integration",
+            "description": "Create methods to fetch release information from GitHub API, including latest release and specific version lookup",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement get_latest_release() and get_release(version) methods that parse GitHub API responses. Handle pagination for releases list, extract relevant metadata (version, assets, checksums), and implement proper error handling for API failures or missing releases.",
+            "status": "done",
+            "testStrategy": "Use fixture data for GitHub API responses. Test handling of various release formats, missing releases, and API error responses."
+          },
+          {
+            "id": 3,
+            "title": "Build Firmware Asset Discovery Logic",
+            "description": "Implement logic to identify and extract firmware files and their checksums from GitHub release assets",
+            "dependencies": [
+              2
+            ],
+            "details": "Create _find_firmware_asset() method that searches release assets for firmware files (e.g., .bin, .hex patterns). Extract associated checksum files or metadata. Handle multiple firmware variants if present. Implement fallback logic for different checksum file formats (.sha256, .txt suffixes).",
+            "status": "done",
+            "testStrategy": "Test with various release asset structures, missing checksum files, and multiple firmware variants. Verify correct asset selection logic."
+          },
+          {
+            "id": 4,
+            "title": "Implement Async Download with Progress Tracking",
+            "description": "Create streaming download functionality with progress callbacks and resume capability",
+            "dependencies": [
+              1,
+              3
+            ],
+            "details": "Enhance download_firmware() to support progress callbacks, partial downloads/resume, and concurrent chunk processing. Implement proper file handling with atomic writes (download to temp file, then move). Add download speed calculation and estimated time remaining.",
+            "status": "done",
+            "testStrategy": "Test interrupted downloads, resume functionality, and progress callback accuracy. Verify atomic file operations and cleanup on failure."
+          },
+          {
+            "id": 5,
+            "title": "Add Comprehensive Checksum Verification",
+            "description": "Implement robust checksum verification supporting multiple algorithms and checksum file formats",
+            "dependencies": [
+              4
+            ],
+            "details": "Extend _verify_checksum() to support SHA-256, SHA-512, and MD5. Implement checksum file parsing for different formats. Add streaming checksum calculation during download for efficiency. Include checksum mismatch error details and automatic corruption recovery attempts.",
+            "status": "done",
+            "testStrategy": "Test with corrupted files, various checksum algorithms, and different checksum file formats. Verify streaming checksum calculation matches post-download verification."
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Implement Flash and Verify Operations",
+        "description": "Complete the Flash Wizard with actual flashing capability using esptool.py and post-flash verification",
+        "details": "```python\n# modules/bombercat_flash/flasher.py\nimport esptool\nfrom typing import Callable\n\nclass FlashService:\n    def __init__(self, progress_callback: Callable = None):\n        self.progress_callback = progress_callback\n    \n    async def flash_device(self, port: str, firmware_path: str, chip: str = 'esp32s2'):\n        args = [\n            '--chip', chip,\n            '--port', port,\n            '--baud', '460800',\n            '--before', 'default_reset',\n            '--after', 'hard_reset',\n            'write_flash', '-z',\n            '--flash_mode', 'dio',\n            '--flash_freq', '80m',\n            '--flash_size', 'detect',\n            '0x0', firmware_path\n        ]\n        \n        # Run esptool with progress tracking\n        esp = esptool.main(args)\n        \n    async def verify_flash(self, port: str) -> bool:\n        # Connect and read chip info\n        esp = esptool.ESPLoader.detect_chip(port)\n        # Read first 1KB to verify firmware header\n        data = esp.read_flash(0, 1024)\n        return self._validate_firmware_header(data)\n```\n\nImplement progress callbacks and error handling for common flash failures",
+        "testStrategy": "Test with mock esptool for unit tests, integration test with real hardware, verify recovery from interrupted flash operations",
+        "priority": "high",
+        "dependencies": [
+          3
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Progress Callback System for esptool Operations",
+            "description": "Create a progress tracking mechanism that intercepts esptool's output and converts it to structured progress updates for the UI",
+            "dependencies": [],
+            "details": "Implement a custom output handler that parses esptool's stdout/stderr streams, extracts percentage completion from 'Writing at 0x00008000... (10%)' style messages, and invokes the progress_callback with structured data including current step, percentage, and status messages. Use asyncio subprocess to capture output in real-time.",
+            "status": "done",
+            "testStrategy": "Mock esptool output with sample progress messages and verify callback is invoked with correct progress values at expected intervals"
+          },
+          {
+            "id": 2,
+            "title": "Add Comprehensive Error Handling for Flash Operations",
+            "description": "Implement error detection and recovery for common flash failures including connection errors, wrong chip detection, and write failures",
+            "dependencies": [
+              1
+            ],
+            "details": "Wrap esptool operations in try-except blocks to catch specific exceptions like serial.SerialException for port errors, esptool.FatalError for chip communication issues, and timeout errors. Create custom exception classes (FlashConnectionError, FlashWriteError, ChipMismatchError) with user-friendly error messages and recovery suggestions.",
+            "status": "done",
+            "testStrategy": "Simulate various failure scenarios by mocking esptool exceptions and verify appropriate error handling and user messaging"
+          },
+          {
+            "id": 3,
+            "title": "Implement Firmware Header Validation Logic",
+            "description": "Create the _validate_firmware_header method to verify the flashed firmware by checking magic bytes, version info, and checksum",
+            "dependencies": [],
+            "details": "Read the ESP32 firmware header structure (first 24 bytes containing magic byte 0xE9, segment count, entry point, etc.). Validate magic bytes, check if entry point is within valid range (0x40000000-0x40400000 for ESP32), and optionally verify SHA256 digest if present. Return detailed validation results including what checks passed/failed.",
+            "status": "done",
+            "testStrategy": "Create test firmware headers with valid and invalid magic bytes, entry points, and checksums to verify validation logic"
+          },
+          {
+            "id": 4,
+            "title": "Enhance verify_flash Method with Detailed Chip Communication",
+            "description": "Improve the verify_flash method to establish proper connection, read chip info, and perform comprehensive post-flash verification",
+            "dependencies": [
+              3
+            ],
+            "details": "Use esptool.ESPLoader with proper initialization parameters, implement connection retry logic with configurable timeout, read and verify chip ID/MAC address, check flash size detection, and perform extended verification by reading multiple memory regions. Add progress callbacks during verification steps.",
+            "status": "done",
+            "testStrategy": "Test with actual ESP32 hardware or mock ESPLoader responses to verify connection establishment and memory read operations"
+          },
+          {
+            "id": 5,
+            "title": "Create Async Wrapper and Thread Safety for Flash Operations",
+            "description": "Ensure flash_device and verify_flash methods properly handle async operations and are thread-safe for concurrent UI updates",
+            "dependencies": [
+              1,
+              2,
+              4
+            ],
+            "details": "Convert synchronous esptool operations to async using asyncio.create_subprocess_exec or run_in_executor for CPU-bound operations. Implement proper cleanup on cancellation, add locks to prevent concurrent flash operations on the same port, and ensure progress callbacks are thread-safe using asyncio.Queue for UI updates.",
+            "status": "done",
+            "testStrategy": "Run concurrent flash operations to verify mutual exclusion, test cancellation during flash process, and verify UI remains responsive during long operations"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Build Device Configuration API Service",
+        "description": "Create FastAPI service with POST /config endpoint for dynamic device configuration (Client/Host mode, WiFi, keys) with NVS persistence",
+        "details": "```python\n# api/routers/config.py\nfrom fastapi import APIRouter, HTTPException\nfrom pydantic import BaseModel\nimport serial\nimport json\n\nrouter = APIRouter(prefix='/config')\n\nclass DeviceConfig(BaseModel):\n    mode: str  # 'client' or 'host'\n    wifi_ssid: str\n    wifi_password: str\n    encryption_key: str\n    device_id: str\n\n@router.post('/')\nasync def update_config(config: DeviceConfig, port: str):\n    try:\n        # Send config via serial protocol\n        with serial.Serial(port, 115200, timeout=5) as ser:\n            command = {\n                'cmd': 'SET_CONFIG',\n                'payload': config.dict()\n            }\n            ser.write(json.dumps(command).encode() + b'\\n')\n            \n            # Wait for ACK\n            response = ser.readline().decode().strip()\n            if json.loads(response).get('status') != 'OK':\n                raise HTTPException(400, 'Config update failed')\n                \n            # Trigger NVS save\n            ser.write(b'{\"cmd\": \"SAVE_NVS\"}\\n')\n            \n        return {'status': 'success', 'config': config}\n    except Exception as e:\n        raise HTTPException(500, str(e))\n```\n\nImplement config validation and rollback mechanism",
+        "testStrategy": "Mock serial communication for unit tests, verify NVS persistence with device reboot, test config validation edge cases",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Configuration Validation Layer",
+            "description": "Create a comprehensive validation system for device configuration parameters including mode validation, WiFi credentials format checking, encryption key strength verification, and device ID format validation",
+            "dependencies": [],
+            "details": "Create a validation module that checks: mode is either 'client' or 'host', WiFi SSID length (1-32 chars), password strength (8-63 chars for WPA2), encryption key format (hex string of appropriate length), and device ID format (UUID or custom format). Use Pydantic validators and custom validation functions. Add regex patterns for format validation and implement custom error messages for each validation failure.",
+            "status": "done",
+            "testStrategy": "Write unit tests for each validation rule with valid and invalid inputs. Test edge cases like empty strings, special characters, and maximum length values. Create test fixtures for common configuration scenarios."
+          },
+          {
+            "id": 2,
+            "title": "Design Configuration Backup and Rollback System",
+            "description": "Implement a mechanism to backup current configuration before applying new settings and provide rollback capability in case of failure",
+            "dependencies": [
+              1
+            ],
+            "details": "Create a ConfigurationManager class that: stores current config in memory before updates, implements a backup() method to save current state, provides a rollback() method to restore previous config via serial commands, and maintains a version/timestamp for each configuration. Use a context manager pattern for automatic rollback on exceptions. Store backup in temporary memory structure with timeout for cleanup.",
+            "status": "done",
+            "testStrategy": "Test backup creation, successful update scenarios, rollback on serial communication failure, and rollback on device rejection. Mock serial communication to simulate various failure scenarios."
+          },
+          {
+            "id": 3,
+            "title": "Enhance Serial Communication Protocol",
+            "description": "Improve the serial communication layer with proper error handling, retry logic, and response parsing for configuration commands",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement SerialConfigClient class with: connection pooling for serial ports, automatic retry with exponential backoff (max 3 retries), comprehensive response parsing with error codes, timeout handling for each command type, and command queuing to prevent concurrent access. Add structured logging for all serial communications. Implement health check mechanism to verify device connectivity before sending config.",
+            "status": "done",
+            "testStrategy": "Create mock serial device for testing. Test timeout scenarios, retry logic, malformed responses, and concurrent access attempts. Verify proper resource cleanup on errors."
+          },
+          {
+            "id": 4,
+            "title": "Add Configuration Status and Verification Endpoints",
+            "description": "Create additional API endpoints to check current configuration status, verify configuration was applied successfully, and retrieve device configuration history",
+            "dependencies": [
+              3
+            ],
+            "details": "Implement GET /config/status endpoint to retrieve current device configuration, GET /config/verify endpoint to confirm config is active on device, and GET /config/history endpoint for recent configuration changes. Add response caching with TTL for status queries. Include device synchronization check to ensure API state matches device state. Return detailed status including last update timestamp and active configuration hash.",
+            "status": "done",
+            "testStrategy": "Test status retrieval with various device states, verify caching behavior, test history pagination, and ensure proper error handling when device is disconnected."
+          },
+          {
+            "id": 5,
+            "title": "Implement Configuration Transaction Support",
+            "description": "Add transactional support for configuration updates to ensure atomicity and consistency across multiple configuration parameters",
+            "dependencies": [
+              4
+            ],
+            "details": "Create ConfigTransaction class that: batches multiple configuration changes, validates all changes before applying any, implements two-phase commit protocol with device, and provides transaction ID for tracking. Add database integration to store transaction history and configuration states. Implement webhook notifications for configuration change events. Add rate limiting to prevent configuration spam.",
+            "status": "done",
+            "testStrategy": "Test atomic updates with partial failures, verify rollback of entire transaction on any failure, test concurrent transaction handling, and validate webhook delivery. Create integration tests with actual device simulator."
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Implement NFC Relay Core Service",
+        "description": "Build the bidirectional NFC relay service handling APDU commands between reader and card with <5ms latency requirement",
+        "details": "```python\n# modules/bombercat_relay/relay_core.py\nimport asyncio\nimport serial\nimport time\nfrom typing import Optional\nimport threading\n\nclass NFCRelayService:\n    def __init__(self, client_port: str, host_port: str):\n        self.client_serial = serial.Serial(client_port, 921600, timeout=0.001)\n        self.host_serial = serial.Serial(host_port, 921600, timeout=0.001)\n        self.running = False\n        self.metrics = {'apdu_count': 0, 'total_latency': 0}\n    \n    async def start_relay(self):\n        self.running = True\n        # Use separate threads for minimal latency\n        client_thread = threading.Thread(target=self._relay_client_to_host)\n        host_thread = threading.Thread(target=self._relay_host_to_client)\n        \n        client_thread.start()\n        host_thread.start()\n    \n    def _relay_client_to_host(self):\n        buffer = bytearray()\n        while self.running:\n            if self.client_serial.in_waiting:\n                start_time = time.perf_counter()\n                data = self.client_serial.read(self.client_serial.in_waiting)\n                buffer.extend(data)\n                \n                # Check for complete APDU\n                if self._is_complete_apdu(buffer):\n                    self.host_serial.write(buffer)\n                    self.host_serial.flush()\n                    \n                    latency = (time.perf_counter() - start_time) * 1000\n                    self._update_metrics(latency)\n                    buffer.clear()\n    \n    def _is_complete_apdu(self, data: bytearray) -> bool:\n        # APDU format: CLA INS P1 P2 [Lc] [Data] [Le]\n        if len(data) < 4:\n            return False\n        # Parse and validate APDU structure\n        return True  # Simplified\n```\n\nImplement zero-copy buffer management and latency monitoring",
+        "testStrategy": "Benchmark latency with loopback test, stress test with 1000 APDU/sec, verify data integrity with CRC checks",
+        "priority": "high",
+        "dependencies": [
+          5
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Zero-Copy Ring Buffer for APDU Data",
+            "description": "Create a high-performance ring buffer implementation that eliminates memory copies during APDU relay operations",
+            "dependencies": [],
+            "details": "Implement a lock-free ring buffer using memory-mapped regions for direct serial port access. Use circular buffer with read/write pointers, pre-allocated memory pools, and atomic operations for thread safety. Include methods for direct serial read/write without intermediate copying.",
+            "status": "done",
+            "testStrategy": "Create unit tests to verify buffer operations under concurrent access, measure memory allocation overhead, and validate data integrity during wraparound scenarios"
+          },
+          {
+            "id": 2,
+            "title": "Build APDU Parser and Validator",
+            "description": "Develop a complete APDU command parser that can identify complete frames and validate their structure in real-time",
+            "dependencies": [],
+            "details": "Implement state machine for parsing APDU commands (CLA, INS, P1, P2, Lc, Data, Le fields). Handle both short and extended APDU formats, implement checksum validation, and create fast lookup tables for common command patterns. Parser should work directly on ring buffer without copying data.",
+            "status": "done",
+            "testStrategy": "Test with various APDU command formats including edge cases, malformed packets, and fragmented data. Verify parser performance meets sub-millisecond requirements"
+          },
+          {
+            "id": 3,
+            "title": "Optimize Serial Communication Pipeline",
+            "description": "Enhance serial port handling with kernel-level optimizations and direct memory access techniques",
+            "dependencies": [
+              1
+            ],
+            "details": "Configure serial ports with optimal buffer sizes, implement DMA transfers where available, use ioctl for low-level control, disable Nagle algorithm, and implement interrupt-driven I/O. Create separate read/write threads with CPU affinity settings for minimal context switching.",
+            "status": "done",
+            "testStrategy": "Benchmark serial throughput and latency under various load conditions, test with oscilloscope to measure actual hardware latency"
+          },
+          {
+            "id": 4,
+            "title": "Implement High-Resolution Latency Monitoring",
+            "description": "Create a comprehensive metrics system for tracking relay performance with microsecond precision",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Use monotonic clocks (CLOCK_MONOTONIC) for accurate timing, implement per-APDU latency tracking, create histogram buckets for latency distribution analysis, add rolling window statistics, and implement alerting for latency spikes. Store metrics in lock-free data structures for minimal overhead.",
+            "status": "done",
+            "testStrategy": "Validate timing accuracy against known delays, test metric collection overhead, verify statistics calculation correctness"
+          },
+          {
+            "id": 5,
+            "title": "Create Bidirectional Relay Coordinator",
+            "description": "Integrate all components into a cohesive relay service that manages bidirectional communication with guaranteed low latency",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "details": "Implement the main relay loop using event-driven architecture, coordinate client-to-host and host-to-client threads, add graceful shutdown mechanisms, implement error recovery and reconnection logic, and ensure all operations maintain the <5ms latency requirement. Add configuration for different relay modes and APDU filtering rules.",
+            "status": "done",
+            "testStrategy": "End-to-end testing with real NFC hardware, stress testing with high APDU volumes, latency testing under various network conditions, and fault injection testing for error handling"
+          },
+          {
+            "id": 6,
+            "title": "Implement Zero-Copy Buffer Management System",
+            "description": "Create a high-performance buffer management system using memory views and ring buffers to eliminate data copying overhead during APDU relay operations",
+            "dependencies": [],
+            "details": "Implement a dual ring buffer architecture using Python's memoryview and bytearray. Create separate ring buffers for client-to-host and host-to-client communication channels. Use memory views to read/write data without copying. Implement thread-safe producer-consumer pattern with minimal locking. Add buffer overflow protection and automatic resizing capabilities.",
+            "status": "done",
+            "testStrategy": "Create unit tests to verify zero-copy operations by comparing memory addresses. Benchmark buffer operations to ensure no performance regression. Test thread safety with concurrent read/write operations."
+          },
+          {
+            "id": 7,
+            "title": "Build APDU Parser and Validator",
+            "description": "Develop a complete APDU command parser that can identify complete APDU frames, validate their structure, and handle various APDU formats (short and extended)",
+            "dependencies": [
+              6
+            ],
+            "details": "Implement full APDU parsing logic supporting both T=0 and T=1 protocols. Parse CLA, INS, P1, P2 bytes and handle optional Lc (command data length) and Le (expected response length) fields. Support extended APDU format with 3-byte length fields. Create state machine for tracking partial APDU reception. Add validation for malformed APDUs and implement error recovery.",
+            "status": "done",
+            "testStrategy": "Test with known APDU command sets from ISO 7816-4. Verify parsing of both short and extended APDU formats. Test edge cases like partial frames and malformed data."
+          },
+          {
+            "id": 8,
+            "title": "Optimize Serial Communication Pipeline",
+            "description": "Enhance serial port handling with non-blocking I/O, optimal buffer sizes, and hardware flow control to minimize communication latency",
+            "dependencies": [
+              6,
+              7
+            ],
+            "details": "Configure serial ports with optimal settings: disable Nagle algorithm, set low latency mode, enable hardware flow control. Implement asynchronous I/O using select/epoll for efficient event handling. Tune serial buffer sizes based on typical APDU sizes. Add direct memory access (DMA) support if available. Implement priority queuing for time-critical APDUs.",
+            "status": "done",
+            "testStrategy": "Measure end-to-end latency with oscilloscope on serial lines. Test with various baud rates and buffer configurations. Verify no data loss under high throughput scenarios."
+          },
+          {
+            "id": 9,
+            "title": "Implement Real-Time Latency Monitoring",
+            "description": "Create a comprehensive latency monitoring system that tracks per-APDU timing, identifies bottlenecks, and provides real-time performance metrics",
+            "dependencies": [
+              8
+            ],
+            "details": "Use high-resolution timers (time.perf_counter) to measure latency at multiple points: serial read, APDU parsing, relay transmission, and total end-to-end. Implement moving average and percentile calculations (p50, p95, p99). Create lightweight metrics collection that doesn't impact performance. Add latency histogram generation and anomaly detection for spikes above 5ms threshold.",
+            "status": "done",
+            "testStrategy": "Verify timer accuracy with known delay injection. Test metrics collection overhead stays below 0.1ms. Validate percentile calculations against reference implementation."
+          },
+          {
+            "id": 10,
+            "title": "Add Bidirectional Flow Control and Error Handling",
+            "description": "Implement robust error handling, connection management, and flow control mechanisms to ensure reliable bidirectional communication under all conditions",
+            "dependencies": [
+              9
+            ],
+            "details": "Implement backpressure handling when buffers approach capacity. Add connection state management with automatic reconnection on serial errors. Create error recovery for partial APDU transmission failures. Implement timeout handling for stalled communications. Add graceful shutdown procedures that ensure all pending APDUs are processed. Include circuit breaker pattern for repeated failures.",
+            "status": "done",
+            "testStrategy": "Test with simulated connection drops and serial errors. Verify no APDU loss during error conditions. Test recovery time meets latency requirements after reconnection."
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Create MQTT Telemetry Service with AWS IoT",
+        "description": "Implement MQTT service publishing to AWS IoT Core topics (bombercat/telemetry, bombercat/events) with automatic reconnection",
+        "details": "```python\n# modules/bombercat_mqtt/aws_iot_service.py\nfrom awscrt import mqtt, io, auth\nfrom awsiot import mqtt_connection_builder\nimport json\nimport asyncio\nfrom typing import Dict, Any\n\nclass AWSIoTService:\n    def __init__(self, endpoint: str, cert_path: str, key_path: str, ca_path: str):\n        self.endpoint = endpoint\n        self.client_id = f'bombercat-{uuid.uuid4()}'\n        self.connection = None\n        self.reconnect_attempts = 0\n        self.max_reconnects = 5\n        \n        # Build connection\n        self.connection = mqtt_connection_builder.mtls_from_path(\n            endpoint=endpoint,\n            cert_filepath=cert_path,\n            pri_key_filepath=key_path,\n            ca_filepath=ca_path,\n            client_id=self.client_id,\n            clean_session=False,\n            keep_alive_secs=30,\n            on_connection_interrupted=self._on_connection_interrupted,\n            on_connection_resumed=self._on_connection_resumed\n        )\n    \n    async def connect(self):\n        connect_future = self.connection.connect()\n        await asyncio.wrap_future(connect_future)\n    \n    async def publish_telemetry(self, data: Dict[str, Any]):\n        topic = 'bombercat/telemetry'\n        payload = json.dumps({\n            'timestamp': time.time(),\n            'device_id': self.client_id,\n            'data': data\n        })\n        \n        publish_future = self.connection.publish(\n            topic=topic,\n            payload=payload,\n            qos=mqtt.QoS.AT_LEAST_ONCE\n        )\n        await asyncio.wrap_future(publish_future)\n    \n    async def _reconnect_with_backoff(self):\n        for attempt in range(self.max_reconnects):\n            try:\n                await asyncio.sleep(2 ** attempt)  # Exponential backoff\n                await self.connect()\n                self.reconnect_attempts = 0\n                return\n            except Exception:\n                self.reconnect_attempts += 1\n        raise Exception('Max reconnection attempts reached')\n```",
+        "testStrategy": "Test with AWS IoT Device Simulator, verify message delivery with QoS levels, test reconnection under network failures",
+        "priority": "medium",
+        "dependencies": [
+          1
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up AWS IoT Core connection configuration and credentials",
+            "description": "Create configuration module for AWS IoT Core connection parameters and implement secure credential management for certificates and keys",
+            "dependencies": [],
+            "details": "Create a config.py module that loads AWS IoT endpoint, certificate paths, and other connection parameters from environment variables or a configuration file. Implement validation for required parameters and proper error handling for missing credentials. Add support for different environments (dev, staging, prod).",
+            "status": "done",
+            "testStrategy": "Unit tests to verify configuration loading, validation of required parameters, and proper handling of missing or invalid credentials"
+          },
+          {
+            "id": 2,
+            "title": "Implement core MQTT connection management with AWS IoT SDK",
+            "description": "Create the base AWSIoTService class with connection initialization, proper connection lifecycle management, and callback handlers for connection events",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement the AWSIoTService class constructor with AWS IoT SDK connection builder, add connection state tracking, implement connect() and disconnect() methods with proper async/await patterns. Include connection event callbacks (_on_connection_interrupted, _on_connection_resumed) and maintain connection state flags.",
+            "status": "done",
+            "testStrategy": "Integration tests with AWS IoT Core test endpoint to verify successful connection establishment, proper callback invocation, and connection state management"
+          },
+          {
+            "id": 3,
+            "title": "Add automatic reconnection with exponential backoff",
+            "description": "Implement robust reconnection logic with exponential backoff strategy and maximum retry limits to handle network interruptions gracefully",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement _reconnect_with_backoff() method with exponential backoff (2^attempt seconds), add reconnection attempt tracking, implement maximum retry limit with configurable threshold. Add logging for reconnection attempts and failures. Ensure proper cleanup of failed connections before retry attempts.",
+            "status": "done",
+            "testStrategy": "Unit tests simulating connection failures and verifying backoff timing, retry limits, and proper state management during reconnection attempts"
+          },
+          {
+            "id": 4,
+            "title": "Create telemetry and event publishing methods",
+            "description": "Implement methods for publishing telemetry data to 'bombercat/telemetry' and events to 'bombercat/events' topics with proper message formatting and QoS settings",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement publish_telemetry() and publish_event() methods with JSON payload formatting including timestamp, device_id, and data fields. Add message queuing for offline scenarios, implement QoS level AT_LEAST_ONCE for reliability. Add payload size validation and error handling for publish failures.",
+            "status": "done",
+            "testStrategy": "Integration tests publishing to test topics, verifying message format, QoS delivery guarantees, and error handling for oversized payloads"
+          },
+          {
+            "id": 5,
+            "title": "Add service lifecycle management and monitoring",
+            "description": "Implement service initialization, shutdown procedures, health monitoring, and metrics collection for the MQTT service",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "Create start() and stop() methods for proper service lifecycle, implement health check endpoint that verifies connection status, add metrics collection for messages published, connection uptime, and reconnection attempts. Implement graceful shutdown with pending message flushing. Add comprehensive logging throughout the service.",
+            "status": "done",
+            "testStrategy": "End-to-end tests verifying service startup/shutdown sequences, health check accuracy, metrics collection, and graceful handling of shutdown during active publishing"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Build Flet Web Dashboard UI",
+        "description": "Create responsive Flet dashboard showing real-time device status, logs, module controls, and latency graphs with <100ms WebSocket updates",
+        "details": "```python\n# ui/dashboard.py\nimport flet as ft\nimport asyncio\nfrom datetime import datetime\nimport websockets\nimport json\n\nclass BomberCatDashboard:\n    def __init__(self):\n        self.page = None\n        self.ws_client = None\n        self.device_status = ft.Text('Disconnected', color='red')\n        self.log_view = ft.ListView(expand=True, spacing=10, height=300)\n        self.latency_chart = ft.LineChart(\n            data_series=[ft.LineChartData(\n                data_points=[],\n                stroke_width=2,\n                color=ft.colors.BLUE,\n                curved=True\n            )],\n            border=ft.border.all(1, ft.colors.with_opacity(0.2, ft.colors.ON_SURFACE)),\n            horizontal_grid_lines=ft.ChartGridLines(\n                interval=1, color=ft.colors.with_opacity(0.2, ft.colors.ON_SURFACE)\n            ),\n            expand=True\n        )\n    \n    async def main(self, page: ft.Page):\n        self.page = page\n        page.title = 'BomberCat Integrator'\n        page.theme_mode = ft.ThemeMode.DARK\n        \n        # Layout\n        page.add(\n            ft.Row([\n                ft.Container(\n                    content=ft.Column([\n                        ft.Text('Device Status', size=20),\n                        self.device_status,\n                        ft.ElevatedButton('Flash Device', on_click=self.flash_device),\n                        ft.ElevatedButton('Start Relay', on_click=self.start_relay),\n                        ft.ElevatedButton('Stop Relay', on_click=self.stop_relay)\n                    ]),\n                    padding=20,\n                    expand=1\n                ),\n                ft.Container(\n                    content=ft.Column([\n                        ft.Text('Latency Monitor', size=20),\n                        self.latency_chart\n                    ]),\n                    padding=20,\n                    expand=2\n                )\n            ]),\n            ft.Container(\n                content=ft.Column([\n                    ft.Text('System Logs', size=20),\n                    self.log_view\n                ]),\n                padding=20\n            )\n        )\n        \n        # Start WebSocket connection\n        await self.connect_websocket()\n    \n    async def connect_websocket(self):\n        self.ws_client = await websockets.connect('ws://localhost:8000/ws')\n        asyncio.create_task(self.receive_updates())\n    \n    async def receive_updates(self):\n        async for message in self.ws_client:\n            data = json.loads(message)\n            if data['type'] == 'status':\n                self.device_status.value = data['status']\n                self.device_status.color = 'green' if data['status'] == 'Connected' else 'red'\n            elif data['type'] == 'latency':\n                self.update_latency_chart(data['value'])\n            elif data['type'] == 'log':\n                self.add_log_entry(data['message'])\n            \n            await self.page.update_async()\n```\n\nImplement responsive layout and real-time data binding",
+        "testStrategy": "Test UI responsiveness with simulated high-frequency updates, verify WebSocket reconnection, test on mobile/desktop viewports",
+        "priority": "medium",
+        "dependencies": [
+          1
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create WebSocket Manager with Connection Handling",
+            "description": "Implement a robust WebSocket manager class that handles connection lifecycle, automatic reconnection, and message queuing for reliable real-time communication",
+            "dependencies": [],
+            "details": "Create a WebSocketManager class that maintains connection state, implements exponential backoff for reconnection attempts, queues messages during disconnection, and provides async methods for sending/receiving data. Include connection status callbacks and error handling.",
+            "status": "done",
+            "testStrategy": "Mock WebSocket server to test connection scenarios, verify reconnection logic with network interruptions, and measure message delivery latency"
+          },
+          {
+            "id": 2,
+            "title": "Build Responsive Dashboard Layout Components",
+            "description": "Design and implement responsive Flet components for device status panel, control buttons, and log viewer that adapt to different screen sizes",
+            "dependencies": [],
+            "details": "Create reusable Flet components using ResponsiveRow and adaptive containers. Implement device status card with visual indicators, control button group with loading states, and scrollable log viewer with timestamp formatting. Use Flet's responsive breakpoints for mobile/tablet/desktop layouts.",
+            "status": "done",
+            "testStrategy": "Test layout at different viewport sizes (320px, 768px, 1024px+), verify component visibility and usability on each breakpoint"
+          },
+          {
+            "id": 3,
+            "title": "Implement Real-time Latency Chart with Data Buffer",
+            "description": "Create an optimized line chart component that displays latency data with smooth updates, automatic scaling, and efficient data point management",
+            "dependencies": [
+              2
+            ],
+            "details": "Build a custom chart wrapper using Flet's LineChart that maintains a circular buffer of last 100 data points, implements smooth transitions between updates, auto-scales Y-axis based on data range, and includes time-based X-axis labels. Add performance optimizations to handle <100ms update intervals.",
+            "status": "done",
+            "testStrategy": "Stress test with rapid data updates, verify chart performance with 10 updates/second, check memory usage with extended runtime"
+          },
+          {
+            "id": 4,
+            "title": "Create State Management System with Data Binding",
+            "description": "Implement a centralized state management system that efficiently binds WebSocket data to UI components with minimal re-renders",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Design a StateManager class using observer pattern that tracks device status, latency metrics, and log entries. Implement selective component updates based on data changes, batch UI updates within animation frames, and provide typed data models for all state objects. Include state persistence for session recovery.",
+            "status": "done",
+            "testStrategy": "Profile render performance with Chrome DevTools, verify only changed components update, test state synchronization across multiple dashboard instances"
+          },
+          {
+            "id": 5,
+            "title": "Add Module Control Interface with Command Queue",
+            "description": "Build interactive controls for device operations (flash, relay start/stop) with command queuing, progress tracking, and error handling",
+            "dependencies": [
+              1,
+              4
+            ],
+            "details": "Implement command buttons with loading states, create a command queue system that prevents concurrent operations, add progress indicators for long-running tasks like flashing, and display operation results in the log viewer. Include confirmation dialogs for destructive operations and implement command timeout handling.",
+            "status": "done",
+            "testStrategy": "Test command execution flow end-to-end, verify queue behavior with rapid button clicks, validate error states and recovery mechanisms"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Integrate FastAPI Backend with All Services",
+        "description": "Create main FastAPI application integrating all modules with WebSocket support for real-time updates to Flet dashboard",
+        "details": "```python\n# api/main.py\nfrom fastapi import FastAPI, WebSocket, WebSocketDisconnect\nfrom fastapi.middleware.cors import CORSMiddleware\nimport asyncio\nfrom typing import List\nimport uvicorn\n\nfrom modules.bombercat_flash import FlashService\nfrom modules.bombercat_config import ConfigService\nfrom modules.bombercat_relay import RelayService\nfrom modules.bombercat_mqtt import MQTTService\n\napp = FastAPI(title='BomberCat Integrator API', version='2.0')\n\n# Services\nflash_service = FlashService()\nconfig_service = ConfigService()\nrelay_service = RelayService()\nmqtt_service = MQTTService()\n\n# WebSocket manager\nclass ConnectionManager:\n    def __init__(self):\n        self.active_connections: List[WebSocket] = []\n    \n    async def connect(self, websocket: WebSocket):\n        await websocket.accept()\n        self.active_connections.append(websocket)\n    \n    async def broadcast(self, message: dict):\n        for connection in self.active_connections:\n            try:\n                await connection.send_json(message)\n            except:\n                self.active_connections.remove(connection)\n\nmanager = ConnectionManager()\n\n@app.on_event('startup')\nasync def startup_event():\n    # Initialize services\n    await mqtt_service.connect()\n    \n    # Start background tasks\n    asyncio.create_task(monitor_device_status())\n    asyncio.create_task(relay_metrics_publisher())\n\n@app.websocket('/ws')\nasync def websocket_endpoint(websocket: WebSocket):\n    await manager.connect(websocket)\n    try:\n        while True:\n            await websocket.receive_text()\n    except WebSocketDisconnect:\n        manager.disconnect(websocket)\n\n@app.post('/flash')\nasync def flash_device(port: str, firmware_version: str):\n    # Progress callback\n    async def progress_callback(percent: int):\n        await manager.broadcast({\n            'type': 'flash_progress',\n            'value': percent\n        })\n    \n    result = await flash_service.flash_device(\n        port=port,\n        version=firmware_version,\n        progress_callback=progress_callback\n    )\n    return result\n\nasync def monitor_device_status():\n    while True:\n        status = await flash_service.get_device_status()\n        await manager.broadcast({\n            'type': 'status',\n            'status': status\n        })\n        await asyncio.sleep(1)\n\nasync def relay_metrics_publisher():\n    while True:\n        if relay_service.is_running:\n            metrics = relay_service.get_metrics()\n            await manager.broadcast({\n                'type': 'latency',\n                'value': metrics['avg_latency']\n            })\n            \n            # Publish to MQTT\n            await mqtt_service.publish_telemetry(metrics)\n        \n        await asyncio.sleep(0.1)  # 100ms updates\n```",
+        "testStrategy": "Load test with multiple WebSocket connections, verify service orchestration, test graceful shutdown and resource cleanup",
+        "priority": "medium",
+        "dependencies": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up FastAPI application structure and middleware",
+            "description": "Initialize the FastAPI application with proper configuration, CORS middleware, and organize the project structure for service integration",
+            "dependencies": [],
+            "details": "Create the main FastAPI app instance with title and version, configure CORS middleware to allow cross-origin requests from the Flet dashboard, set up proper project structure with api/main.py as entry point, configure logging and error handling middleware, and prepare the application for service initialization",
+            "status": "done",
+            "testStrategy": "Test that the FastAPI app starts correctly, verify CORS headers are properly set, ensure health check endpoint responds, and validate middleware chain execution order"
+          },
+          {
+            "id": 2,
+            "title": "Implement WebSocket connection manager",
+            "description": "Create a connection manager class to handle WebSocket connections, manage active connections list, and provide broadcast functionality for real-time updates",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement ConnectionManager class with methods to accept new WebSocket connections, maintain a list of active connections, handle disconnections gracefully, provide broadcast method to send messages to all connected clients, and implement error handling for failed connections",
+            "status": "done",
+            "testStrategy": "Test WebSocket connection establishment and disconnection, verify multiple clients can connect simultaneously, test broadcast functionality with mock messages, and ensure proper cleanup of disconnected clients"
+          },
+          {
+            "id": 3,
+            "title": "Initialize and integrate all BomberCat services",
+            "description": "Import and initialize FlashService, ConfigService, RelayService, and MQTTService instances, set up startup event handler for service initialization",
+            "dependencies": [
+              1
+            ],
+            "details": "Import all service modules from their respective locations, create singleton instances of each service, implement startup event handler to initialize services (especially MQTT connection), handle service initialization errors gracefully, and ensure services are accessible throughout the application",
+            "status": "done",
+            "testStrategy": "Mock each service and verify initialization, test startup event execution order, verify MQTT connection establishment, and ensure service instances are properly accessible from endpoints"
+          },
+          {
+            "id": 4,
+            "title": "Create API endpoints and WebSocket handler",
+            "description": "Implement the /flash POST endpoint for device flashing with progress callbacks, create /ws WebSocket endpoint for real-time communication, and integrate progress updates with WebSocket broadcasts",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Implement /flash endpoint that accepts port and firmware version parameters, create progress callback function that broadcasts updates via WebSocket, implement WebSocket endpoint that accepts connections and maintains them, handle WebSocket disconnections properly, and ensure flash progress updates are sent to all connected clients",
+            "status": "done",
+            "testStrategy": "Test flash endpoint with mock flash operations, verify progress callbacks trigger WebSocket broadcasts, test WebSocket message handling and disconnection scenarios, and validate error responses for invalid requests"
+          },
+          {
+            "id": 5,
+            "title": "Implement background monitoring tasks",
+            "description": "Create asynchronous background tasks for monitoring device status and publishing relay metrics, integrate with WebSocket broadcasts and MQTT publishing",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "Implement monitor_device_status task that polls device status every second and broadcasts updates, create relay_metrics_publisher task that publishes metrics every 100ms when relay is active, ensure tasks are started during application startup, implement proper error handling and recovery for background tasks, and coordinate MQTT publishing with WebSocket broadcasts",
+            "status": "done",
+            "testStrategy": "Test background task execution with mock data, verify broadcast frequency and timing, test MQTT publishing integration, ensure tasks handle service failures gracefully, and validate memory usage doesn't increase over time"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Implement Testing Suite and CI/CD Pipeline",
+        "description": "Create comprehensive test suite achieving 80% coverage and setup CI/CD pipeline for automated testing and deployment",
+        "details": "```python\n# tests/test_flash_service.py\nimport pytest\nfrom unittest.mock import Mock, patch\nfrom modules.bombercat_flash import FlashService\n\n@pytest.fixture\ndef flash_service():\n    return FlashService()\n\n@pytest.mark.asyncio\nasync def test_device_detection(flash_service):\n    with patch('serial.tools.list_ports.comports') as mock_ports:\n        mock_ports.return_value = [\n            Mock(device='/dev/ttyUSB0', description='ESP32-S2')\n        ]\n        \n        devices = await flash_service.detect_devices()\n        assert len(devices) == 1\n        assert devices[0]['chip'] == 'esp32s2'\n\n# tests/test_relay_latency.py\n@pytest.mark.asyncio\nasync def test_relay_latency_requirement():\n    relay = RelayService(client_port='loop://1', host_port='loop://2')\n    \n    # Send 10 test APDUs\n    latencies = []\n    for _ in range(10):\n        start = time.perf_counter()\n        await relay.relay_apdu(b'\\x00\\xA4\\x04\\x00')\n        latencies.append((time.perf_counter() - start) * 1000)\n    \n    avg_latency = sum(latencies) / len(latencies)\n    assert avg_latency < 5.0  # < 5ms requirement\n\n# .github/workflows/ci.yml\nname: CI/CD Pipeline\non:\n  push:\n    branches: [main, develop]\n  pull_request:\n    branches: [main]\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        python-version: ['3.11']\n    \n    steps:\n    - uses: actions/checkout@v3\n    - name: Set up Python\n      uses: actions/setup-python@v4\n      with:\n        python-version: ${{ matrix.python-version }}\n    \n    - name: Install dependencies\n      run: |\n        pip install -e .\n        pip install pytest pytest-asyncio pytest-cov\n    \n    - name: Run tests with coverage\n      run: |\n        pytest --cov=. --cov-report=xml --cov-report=term\n    \n    - name: Upload coverage\n      uses: codecov/codecov-action@v3\n      with:\n        file: ./coverage.xml\n        fail_ci_if_error: true\n        verbose: true\n    \n    - name: Build Docker image\n      run: docker build -t bombercat-integrator:${{ github.sha }} .\n    \n    - name: Push to registry\n      if: github.ref == 'refs/heads/main'\n      run: |\n        echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin\n        docker push bombercat-integrator:${{ github.sha }}\n```\n\nSetup pre-commit hooks, integration tests with hardware mocks, and deployment scripts",
+        "testStrategy": "Achieve 80% code coverage, all critical paths tested, integration tests for each module, performance benchmarks in CI",
+        "priority": "low",
+        "dependencies": [
+          9
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Expand Unit Test Coverage to 80%",
+            "description": "Create comprehensive unit tests for all modules including FlashService, RelayService, and utility functions to achieve 80% code coverage",
+            "dependencies": [],
+            "details": "Write unit tests for uncovered modules: 1) Add tests for error handling in FlashService (connection failures, invalid firmware files, timeout scenarios), 2) Create tests for RelayService edge cases (disconnections, malformed APDUs, buffer overflows), 3) Test utility functions and configuration loading, 4) Mock all hardware dependencies using unittest.mock, 5) Use pytest-cov to track coverage metrics and identify gaps",
+            "status": "pending",
+            "testStrategy": "Use pytest fixtures for common test setups, implement parametrized tests for multiple scenarios, ensure all public methods have at least 3 test cases (happy path, error case, edge case)"
+          },
+          {
+            "id": 2,
+            "title": "Implement Integration Tests with Hardware Mocks",
+            "description": "Create integration tests that simulate real hardware interactions using mock objects and virtual serial ports",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement hardware simulation layer: 1) Create MockESP32Device class that simulates ESP32 responses over virtual serial ports, 2) Implement MockSmartCard class for APDU command/response simulation, 3) Use pyserial's loop:// URLs for virtual serial communication, 4) Create end-to-end test scenarios (flash firmware -> relay APDU -> verify response), 5) Add performance benchmarks to verify <5ms latency requirement",
+            "status": "pending",
+            "testStrategy": "Create reusable mock fixtures that can simulate various hardware states (connected, disconnected, busy), implement timing assertions for latency requirements"
+          },
+          {
+            "id": 3,
+            "title": "Setup Pre-commit Hooks and Code Quality Tools",
+            "description": "Configure pre-commit hooks for code formatting, linting, type checking, and security scanning",
+            "dependencies": [],
+            "details": "Create .pre-commit-config.yaml with: 1) Black for Python formatting, 2) Flake8 for linting with project-specific rules, 3) MyPy for type checking, 4) Bandit for security analysis, 5) isort for import sorting, 6) Add commit message validation hook, 7) Configure pyproject.toml with tool configurations, 8) Create setup script for developer onboarding",
+            "status": "pending",
+            "testStrategy": "Test pre-commit hooks by intentionally introducing formatting/linting issues and verifying they're caught before commit"
+          },
+          {
+            "id": 4,
+            "title": "Enhance CI/CD Pipeline with Multi-stage Testing",
+            "description": "Extend GitHub Actions workflow to include multiple testing stages, artifact building, and conditional deployments",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Update .github/workflows/ci.yml to: 1) Add matrix testing for multiple OS (ubuntu, windows, macos), 2) Implement staged testing (unit -> integration -> smoke), 3) Add dependency caching for faster builds, 4) Create separate jobs for linting, security scanning, and coverage reporting, 5) Implement semantic versioning with automatic tagging, 6) Add artifact upload for test reports and coverage data, 7) Configure branch protection rules requiring all checks to pass",
+            "status": "pending",
+            "testStrategy": "Create test PR to verify all CI stages work correctly, intentionally fail different stages to ensure proper error reporting"
+          },
+          {
+            "id": 5,
+            "title": "Create Deployment Scripts and Documentation",
+            "description": "Develop automated deployment scripts for Docker and bare metal installations with comprehensive deployment documentation",
+            "dependencies": [
+              4
+            ],
+            "details": "Create deployment automation: 1) Write deploy.sh script for Docker deployment with health checks, 2) Create ansible playbook for bare metal deployment, 3) Implement rollback mechanism for failed deployments, 4) Add deployment environment validation (check Python version, dependencies, permissions), 5) Create deployment documentation covering Docker, systemd service, and development setup, 6) Add monitoring integration hooks (Prometheus metrics endpoint), 7) Implement zero-downtime deployment strategy",
+            "status": "pending",
+            "testStrategy": "Test deployment scripts in isolated environments (Docker containers, VMs), verify rollback functionality by simulating deployment failures"
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Audit Global Codebase and Fix Import/Routing Issues",
+        "description": "Perform comprehensive codebase audit to identify and fix all import path issues, circular dependencies, and routing inconsistencies across modules and API endpoints",
+        "details": "## Implementation Steps\n\n### 1. Import Path Analysis\n```python\n# tools/import_analyzer.py\nimport ast\nimport os\nfrom pathlib import Path\nfrom typing import Dict, List, Set\n\nclass ImportAnalyzer:\n    def __init__(self, project_root: str):\n        self.project_root = Path(project_root)\n        self.import_graph = {}\n        self.circular_deps = []\n        self.missing_imports = []\n    \n    def analyze_file(self, filepath: Path) -> Dict[str, List[str]]:\n        \"\"\"Extract all imports from a Python file\"\"\"\n        with open(filepath, 'r') as f:\n            tree = ast.parse(f.read())\n        \n        imports = []\n        for node in ast.walk(tree):\n            if isinstance(node, ast.Import):\n                imports.extend([alias.name for alias in node.names])\n            elif isinstance(node, ast.ImportFrom):\n                module = node.module or ''\n                imports.append(module)\n        \n        return {'file': str(filepath), 'imports': imports}\n    \n    def detect_circular_dependencies(self):\n        \"\"\"Use DFS to detect circular import chains\"\"\"\n        visited = set()\n        rec_stack = set()\n        \n        def dfs(module: str, path: List[str]):\n            visited.add(module)\n            rec_stack.add(module)\n            path.append(module)\n            \n            for imported in self.import_graph.get(module, []):\n                if imported not in visited:\n                    if dfs(imported, path.copy()):\n                        return True\n                elif imported in rec_stack:\n                    self.circular_deps.append(path + [imported])\n                    return True\n            \n            rec_stack.remove(module)\n            return False\n```\n\n### 2. Fix Import Structure\n```python\n# Standardize imports across all modules\n# Before:\nfrom bombercat_flash import FlashService  # Relative import\nfrom ..config import settings  # Inconsistent relative\n\n# After:\nfrom modules.bombercat_flash import FlashService  # Absolute import\nfrom modules.bombercat_config import settings  # Consistent absolute\n\n# Update __init__.py files for proper module exposure\n# modules/__init__.py\nfrom .bombercat_flash import FlashService\nfrom .bombercat_config import ConfigService\nfrom .bombercat_relay import RelayService\nfrom .bombercat_mqtt import MQTTService\n\n__all__ = ['FlashService', 'ConfigService', 'RelayService', 'MQTTService']\n```\n\n### 3. API Route Consolidation\n```python\n# api/routes/__init__.py\nfrom fastapi import APIRouter\nfrom .flash_routes import router as flash_router\nfrom .config_routes import router as config_router\nfrom .relay_routes import router as relay_router\nfrom .mqtt_routes import router as mqtt_router\n\ndef register_routes(app):\n    \"\"\"Central route registration with proper prefixes\"\"\"\n    app.include_router(flash_router, prefix=\"/api/v1/flash\", tags=[\"flash\"])\n    app.include_router(config_router, prefix=\"/api/v1/config\", tags=[\"config\"])\n    app.include_router(relay_router, prefix=\"/api/v1/relay\", tags=[\"relay\"])\n    app.include_router(mqtt_router, prefix=\"/api/v1/mqtt\", tags=[\"mqtt\"])\n```\n\n### 4. Fix Circular Dependencies\n```python\n# Common pattern: Extract shared interfaces\n# interfaces/base_service.py\nfrom abc import ABC, abstractmethod\n\nclass BaseService(ABC):\n    @abstractmethod\n    async def initialize(self):\n        pass\n    \n    @abstractmethod\n    async def shutdown(self):\n        pass\n\n# Dependency injection pattern to break cycles\n# services/service_locator.py\nclass ServiceLocator:\n    _services = {}\n    \n    @classmethod\n    def register(cls, name: str, service):\n        cls._services[name] = service\n    \n    @classmethod\n    def get(cls, name: str):\n        return cls._services.get(name)\n```\n\n### 5. Path Resolution Issues\n```python\n# config/paths.py\nfrom pathlib import Path\n\nclass ProjectPaths:\n    ROOT = Path(__file__).parent.parent\n    MODULES = ROOT / \"modules\"\n    API = ROOT / \"api\"\n    UI = ROOT / \"ui\"\n    TESTS = ROOT / \"tests\"\n    CONFIGS = ROOT / \"configs\"\n    \n    @classmethod\n    def resolve(cls, relative_path: str) -> Path:\n        \"\"\"Resolve paths relative to project root\"\"\"\n        return cls.ROOT / relative_path\n```\n\n### 6. Update All Module Imports\n```bash\n# Script to automatically fix imports\n#!/bin/bash\n# fix_imports.sh\n\n# Find and replace relative imports\nfind . -name \"*.py\" -type f -exec sed -i 's/from \\.\\./from modules/g' {} +\nfind . -name \"*.py\" -type f -exec sed -i 's/from bombercat_/from modules.bombercat_/g' {} +\n\n# Update sys.path additions\nfind . -name \"*.py\" -type f -exec sed -i '/sys\\.path\\.append/d' {} +\n```\n\n### 7. Routing Consistency\n```python\n# Ensure all routes follow RESTful conventions\n# api/routes/standards.py\nROUTE_PATTERNS = {\n    'list': 'GET /{resource}',\n    'create': 'POST /{resource}',\n    'read': 'GET /{resource}/{id}',\n    'update': 'PUT /{resource}/{id}',\n    'delete': 'DELETE /{resource}/{id}',\n    'action': 'POST /{resource}/{id}/{action}'\n}\n\n# Validate all routes against patterns\ndef validate_routes(app):\n    for route in app.routes:\n        if hasattr(route, 'path'):\n            # Check against patterns\n            pass\n```",
+        "testStrategy": "## Verification Strategy\n\n### 1. Import Validation Tests\n```python\n# tests/test_imports.py\ndef test_no_circular_imports():\n    analyzer = ImportAnalyzer(project_root='.')\n    analyzer.build_import_graph()\n    circular = analyzer.detect_circular_dependencies()\n    assert len(circular) == 0, f\"Circular dependencies found: {circular}\"\n\ndef test_all_imports_resolvable():\n    for module in ['bombercat_flash', 'bombercat_config', 'bombercat_relay', 'bombercat_mqtt']:\n        try:\n            importlib.import_module(f'modules.{module}')\n        except ImportError as e:\n            pytest.fail(f\"Failed to import {module}: {e}\")\n```\n\n### 2. Route Testing\n```python\n# tests/test_routes.py\ndef test_route_consistency():\n    from api.main import app\n    routes = []\n    for route in app.routes:\n        if hasattr(route, 'path'):\n            routes.append(route.path)\n    \n    # Check for duplicate routes\n    assert len(routes) == len(set(routes)), \"Duplicate routes found\"\n    \n    # Verify all routes start with /api/v1\n    for route in routes:\n        assert route.startswith('/api/v1') or route in ['/', '/health', '/docs']\n```\n\n### 3. Static Analysis\n```bash\n# Run pylint to check import issues\npylint --disable=all --enable=cyclic-import,import-error .\n\n# Run mypy for type checking\nmypy --strict --follow-imports=normal .\n\n# Check with flake8\nflake8 --select=F401,F402,F403,F404 .  # Import-related errors\n```\n\n### 4. Integration Testing\n```python\n# Verify all services can be imported and initialized together\nasync def test_full_system_import():\n    from api.main import app\n    from modules.bombercat_flash import FlashService\n    from modules.bombercat_config import ConfigService\n    from modules.bombercat_relay import RelayService\n    from modules.bombercat_mqtt import MQTTService\n    \n    # Should not raise any import errors\n    services = [\n        FlashService(),\n        ConfigService(),\n        RelayService(),\n        MQTTService()\n    ]\n    \n    assert all(services)\n```\n\n### 5. Documentation Validation\n- Generate import dependency graph visualization\n- Verify all README files have correct import examples\n- Check that API documentation matches actual routes",
+        "status": "pending",
+        "dependencies": [
+          9
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Import Analysis Tool and Scan Codebase",
+            "description": "Develop and run the ImportAnalyzer tool to scan the entire codebase, building a complete import dependency graph and identifying all import-related issues including circular dependencies, missing imports, and inconsistent import patterns",
+            "dependencies": [],
+            "details": "Implement the ImportAnalyzer class with methods to parse AST, build import graphs, detect circular dependencies using DFS, and generate a comprehensive report. Scan all Python files in modules/, api/, and ui/ directories. Output results to a structured JSON report including: import graph visualization, list of circular dependency chains, missing/broken imports, and statistics on import patterns used",
+            "status": "pending",
+            "testStrategy": "Create test files with known circular dependencies and various import patterns. Verify the analyzer correctly identifies all issues. Test edge cases like dynamic imports and conditional imports"
+          },
+          {
+            "id": 2,
+            "title": "Establish Project-Wide Import Standards and Path Resolution",
+            "description": "Define and implement standardized import conventions, create the ProjectPaths utility class for consistent path resolution, and establish clear module exposure patterns through __init__.py files",
+            "dependencies": [
+              1
+            ],
+            "details": "Create config/paths.py with ProjectPaths class containing all project directory constants. Establish import convention: use absolute imports from project root (e.g., 'from modules.bombercat_flash import FlashService'). Update all __init__.py files in modules/ to properly expose public interfaces. Create a style guide document defining import ordering (stdlib, third-party, local) and grouping rules",
+            "status": "pending",
+            "testStrategy": "Write unit tests for ProjectPaths.resolve() method. Create import validation script to check compliance with new standards. Test that all modules are properly importable using the new conventions"
+          },
+          {
+            "id": 3,
+            "title": "Refactor Codebase to Fix Import Issues and Circular Dependencies",
+            "description": "Systematically update all import statements across the codebase to follow the new standards, break circular dependencies by extracting interfaces and implementing dependency injection patterns",
+            "dependencies": [
+              2
+            ],
+            "details": "Create interfaces/base_service.py with abstract base classes. Implement ServiceLocator pattern in services/service_locator.py for dependency injection. Run automated script to convert relative imports to absolute imports. Manually review and fix complex circular dependencies by extracting shared interfaces or reorganizing code. Update all sys.path manipulations to use ProjectPaths instead",
+            "status": "pending",
+            "testStrategy": "Run import analyzer after each module refactoring to verify circular dependencies are resolved. Execute full test suite after each major change. Use pytest with import order randomization to catch hidden dependencies"
+          },
+          {
+            "id": 4,
+            "title": "Consolidate and Standardize API Routes",
+            "description": "Create centralized route registration system, ensure all API endpoints follow RESTful conventions, and fix any routing inconsistencies or conflicts between modules",
+            "dependencies": [
+              3
+            ],
+            "details": "Implement api/routes/__init__.py with register_routes() function for centralized route management. Create route validation utility to ensure all endpoints follow RESTful patterns (GET /resource, POST /resource, etc.). Standardize route prefixes: /api/v1/{module}/{resource}. Update all route decorators to use consistent naming and HTTP methods. Document API endpoints in OpenAPI/Swagger format",
+            "status": "pending",
+            "testStrategy": "Write integration tests for all API endpoints using TestClient. Verify no route conflicts exist by checking for duplicate paths. Test that all routes are accessible and return expected status codes"
+          },
+          {
+            "id": 5,
+            "title": "Implement Continuous Import Health Monitoring",
+            "description": "Set up automated tools and CI/CD checks to prevent future import issues, maintain code quality, and ensure ongoing compliance with established import standards",
+            "dependencies": [
+              4
+            ],
+            "details": "Create pre-commit hooks that run import analyzer on changed files. Add GitHub Actions workflow to check for circular dependencies and import standard violations on every PR. Implement import-health command in project CLI that developers can run locally. Create dashboard or report generator for import metrics and dependency visualization. Set up automated alerts for new circular dependencies",
+            "status": "pending",
+            "testStrategy": "Test pre-commit hooks with intentionally bad imports to verify they're caught. Verify CI pipeline fails appropriately on import violations. Test that import health metrics are accurately tracked over time"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "created": "2025-07-04T16:34:51.412Z",
+      "updated": "2025-07-05T02:15:26.786Z",
+      "description": "Tasks for master context"
+    }
+  }
+}

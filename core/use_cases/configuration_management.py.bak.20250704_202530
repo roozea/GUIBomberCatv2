@@ -1,0 +1,247 @@
+"""Configuration management use cases."""
+
+from typing import List, Optional
+from uuid import UUID
+
+from ..entities.configuration import (
+    DeviceConfiguration,
+    NetworkConfiguration,
+    MQTTConfiguration,
+    ConfigurationStatus,
+)
+from ..entities.device import Device
+
+
+class ConfigurationRepository:
+    """Abstract repository interface for configuration persistence."""
+    
+    async def save(self, configuration: DeviceConfiguration) -> DeviceConfiguration:
+        """Save configuration."""
+        raise NotImplementedError
+    
+    async def find_by_id(self, config_id: UUID) -> Optional[DeviceConfiguration]:
+        """Find configuration by ID."""
+        raise NotImplementedError
+    
+    async def find_by_device_id(self, device_id: UUID) -> List[DeviceConfiguration]:
+        """Find all configurations for a device."""
+        raise NotImplementedError
+    
+    async def find_active_by_device_id(
+        self, device_id: UUID
+    ) -> Optional[DeviceConfiguration]:
+        """Find active configuration for a device."""
+        raise NotImplementedError
+    
+    async def find_all(self) -> List[DeviceConfiguration]:
+        """Find all configurations."""
+        raise NotImplementedError
+    
+    async def delete(self, config_id: UUID) -> bool:
+        """Delete configuration."""
+        raise NotImplementedError
+
+
+class ConfigurationDeploymentService:
+    """Abstract service interface for deploying configurations to devices."""
+    
+    async def deploy_configuration(
+        self, device: Device, configuration: DeviceConfiguration
+    ) -> bool:
+        """Deploy configuration to device."""
+        raise NotImplementedError
+    
+    async def validate_network_settings(
+        self, network_config: NetworkConfiguration
+    ) -> bool:
+        """Validate network configuration settings."""
+        raise NotImplementedError
+    
+    async def test_mqtt_connection(self, mqtt_config: MQTTConfiguration) -> bool:
+        """Test MQTT connection with given configuration."""
+        raise NotImplementedError
+
+
+class ConfigurationManagementUseCase:
+    """Use case for managing device configurations."""
+    
+    def __init__(
+        self,
+        configuration_repository: ConfigurationRepository,
+        deployment_service: ConfigurationDeploymentService,
+    ):
+        self._configuration_repository = configuration_repository
+        self._deployment_service = deployment_service
+    
+    async def create_configuration(
+        self,
+        device_id: UUID,
+        name: str,
+        network_config: NetworkConfiguration,
+        mqtt_config: Optional[MQTTConfiguration] = None,
+        custom_settings: Optional[dict] = None,
+    ) -> DeviceConfiguration:
+        """Create a new device configuration."""
+        # Validate network configuration
+        if not network_config.validate():
+            raise ValueError("Invalid network configuration")
+        
+        # Validate MQTT configuration if provided
+        if mqtt_config and not mqtt_config.validate():
+            raise ValueError("Invalid MQTT configuration")
+        
+        # Create configuration
+        configuration = DeviceConfiguration.create(
+            device_id=device_id,
+            name=name,
+            network=network_config,
+            mqtt=mqtt_config,
+            custom_settings=custom_settings,
+        )
+        
+        return await self._configuration_repository.save(configuration)
+    
+    async def get_configuration(self, config_id: UUID) -> Optional[DeviceConfiguration]:
+        """Get configuration by ID."""
+        return await self._configuration_repository.find_by_id(config_id)
+    
+    async def get_device_configurations(
+        self, device_id: UUID
+    ) -> List[DeviceConfiguration]:
+        """Get all configurations for a device."""
+        return await self._configuration_repository.find_by_device_id(device_id)
+    
+    async def get_active_configuration(
+        self, device_id: UUID
+    ) -> Optional[DeviceConfiguration]:
+        """Get active configuration for a device."""
+        return await self._configuration_repository.find_active_by_device_id(device_id)
+    
+    async def update_configuration(
+        self,
+        config_id: UUID,
+        name: Optional[str] = None,
+        network_config: Optional[NetworkConfiguration] = None,
+        mqtt_config: Optional[MQTTConfiguration] = None,
+        custom_settings: Optional[dict] = None,
+    ) -> Optional[DeviceConfiguration]:
+        """Update an existing configuration."""
+        configuration = await self._configuration_repository.find_by_id(config_id)
+        if not configuration:
+            return None
+        
+        # Only allow updates to draft configurations
+        if configuration.status != ConfigurationStatus.DRAFT:
+            raise ValueError("Can only update draft configurations")
+        
+        # Update fields if provided
+        if name is not None:
+            configuration.name = name
+        
+        if network_config is not None:
+            if not network_config.validate():
+                raise ValueError("Invalid network configuration")
+            configuration.network = network_config
+        
+        if mqtt_config is not None:
+            if not mqtt_config.validate():
+                raise ValueError("Invalid MQTT configuration")
+            configuration.mqtt = mqtt_config
+        
+        if custom_settings is not None:
+            configuration.custom_settings = custom_settings
+        
+        # Validate complete configuration
+        if not configuration.validate():
+            raise ValueError("Invalid configuration after update")
+        
+        return await self._configuration_repository.save(configuration)
+    
+    async def deploy_configuration(
+        self, config_id: UUID, device: Device
+    ) -> bool:
+        """Deploy configuration to device."""
+        configuration = await self._configuration_repository.find_by_id(config_id)
+        if not configuration:
+            raise ValueError("Configuration not found")
+        
+        if configuration.device_id != device.id:
+            raise ValueError("Configuration does not belong to this device")
+        
+        # Validate configuration before deployment
+        if not configuration.validate():
+            raise ValueError("Invalid configuration")
+        
+        # Check if device can receive configuration
+        if not device.is_online():
+            raise ValueError("Device is not online")
+        
+        # Mark as pending
+        configuration.status = ConfigurationStatus.PENDING
+        await self._configuration_repository.save(configuration)
+        
+        try:
+            # Deploy to device
+            success = await self._deployment_service.deploy_configuration(
+                device, configuration
+            )
+            
+            if success:
+                configuration.mark_as_applied()
+            else:
+                configuration.mark_as_failed()
+            
+            await self._configuration_repository.save(configuration)
+            return success
+        
+        except Exception:
+            configuration.mark_as_failed()
+            await self._configuration_repository.save(configuration)
+            raise
+    
+    async def validate_network_configuration(
+        self, network_config: NetworkConfiguration
+    ) -> bool:
+        """Validate network configuration with external service."""
+        return await self._deployment_service.validate_network_settings(network_config)
+    
+    async def test_mqtt_configuration(
+        self, mqtt_config: MQTTConfiguration
+    ) -> bool:
+        """Test MQTT configuration connectivity."""
+        return await self._deployment_service.test_mqtt_connection(mqtt_config)
+    
+    async def clone_configuration(
+        self, config_id: UUID, new_name: str
+    ) -> Optional[DeviceConfiguration]:
+        """Clone an existing configuration."""
+        original = await self._configuration_repository.find_by_id(config_id)
+        if not original:
+            return None
+        
+        # Create new configuration based on original
+        cloned = DeviceConfiguration.create(
+            device_id=original.device_id,
+            name=new_name,
+            network=original.network,
+            mqtt=original.mqtt,
+            custom_settings=original.custom_settings.copy(),
+        )
+        
+        return await self._configuration_repository.save(cloned)
+    
+    async def delete_configuration(self, config_id: UUID) -> bool:
+        """Delete a configuration."""
+        configuration = await self._configuration_repository.find_by_id(config_id)
+        if not configuration:
+            return False
+        
+        # Don't allow deletion of applied configurations
+        if configuration.status == ConfigurationStatus.APPLIED:
+            raise ValueError("Cannot delete applied configuration")
+        
+        return await self._configuration_repository.delete(config_id)
+    
+    async def list_all_configurations(self) -> List[DeviceConfiguration]:
+        """List all configurations."""
+        return await self._configuration_repository.find_all()

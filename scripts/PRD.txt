@@ -1,0 +1,90 @@
+# PRD – BomberCat Integrator
+**Versión:** 2-Pro  
+**Fecha:** Julio 2025  
+**Estado:** Backlog listo  
+**Stack clave:** Python 3.11 + Flet 0.28, FastAPI 0.115, esptool.py 4.6, AWS IoT Core
+
+---
+
+## 1. Visión
+
+Ofrecer una **herramienta modular** (Web + CLI) que gestione todo el ciclo de vida del dispositivo **BomberCat**:
+
+1. Flasheo fiable del firmware oficial.  
+2. Configuración dinámica (modo Client / Host, Wi-Fi, claves).  
+3. Ejecución en un clic de la PoC _Client-Relay/Host-Relay NFC_.  
+4. Telemetría segura vía MQTT (AWS IoT).  
+5. Dashboard en tiempo real para pentesters, makers y blue-teams.
+
+---
+
+## 2. Fases y módulos
+
+| Fase | Módulo                     | Resultado “Done”                                                                 |
+|------|---------------------------|----------------------------------------------------------------------------------|
+| 1    | **Flash Wizard**          | BomberCat detectado → firmware descargado → flasheado → verificado               |
+| 2    | **Device Configurator**   | Cambiar modo Client/Host, SSID, keys → config persistente en NVS                 |
+| 3    | **Relay Core**            | Reenvío NFC (APDU) bidireccional \< 5 ms lat. entre lector y tarjeta             |
+| 4    | **MQTT Telemetry**        | Publicar tópicos `bombercat/telemetry|events` a AWS IoT con reconexión automática |
+| 5    | **Web Dashboard (Flet)**  | UI responsiva: estado, logs, start/stop módulos, gráfico de latencia             |
+
+> **Idea futura:** plugin “Payload Studio” (generar scripts de ataque), no en MVP.
+
+---
+
+## 3. Usuarios & Jobs-to-Be-Done
+
+| Usuario            | JTBD resumido                                       |
+|--------------------|------------------------------------------------------|
+| **Pentester**      | “Enchufar, flashear, lanzar relay en 2 min.”         |
+| **Investigador**   | “Cambiar parámetros y capturar métricas rápidamente.”|
+| **Blue-team**      | “Monitorizar eventos BomberCat en mi SIEM (MQTT).”   |
+| **Maker/IoT Dev**  | “Usar BomberCat como plataforma de prototipos NFC.”  |
+
+---
+
+## 4. Requisitos funcionales clave
+
+| ID | Descripción | Crit. de aceptación |
+|----|-------------|---------------------|
+| **FW-1** | Auto-detección puerto + chip ESP32-S2 | 100 % detección en Win/Mac/Linux |
+| **FW-2** | Descarga firmware oficial (GitHub releases) | Checksum SHA-256 coincide |
+| **CFG-1** | API `POST /config` (JSON) | Cambios persistentes tras reboot |
+| **REL-1** | Hilo de relay NFC | Lat. media \< 5 ms (10 APDU) |
+| **MQ-1** | Reconexión AWS IoT | Re-intento exponencial ≤ 5 intentos |
+| **UI-1** | Dashboard Flet “Live” | Update vía WebSocket \< 100 ms |
+
+---
+
+## 5. Requisitos no funcionales
+
+| Área | Target MVP | Stretch |
+|------|-----------|---------|
+| Latencia UI | \< 50 ms local | \< 30 ms |
+| Uso RAM (backend) | \< 200 MB | \< 150 MB |
+| Cobertura tests | 80 % | 90 % |
+| Uptime (self-hosted) | 99 % | 99.9 % |
+
+---
+
+## 6. Arquitectura
+
+```mermaid
+graph TD
+  subgraph Flet UI
+    A[Web/Desktop App] --WS/REST--> B(Backend API)
+  end
+  subgraph FastAPI Services
+    B --> C[Flashing Service]
+    B --> D[Config Service]
+    B --> E[Relay Service]
+    B --> F[MQTT Service]
+  end
+  subgraph Infra
+    C --> G[esptool.py]
+    E --> H[pyserial]
+    F --> I[AWS IoT SDK]
+  end
+Clean Architecture en paquetes core/, adapters/, infrastructure/.
+
+Cada módulo instalable vía pip install -e . (bombercat_flash, etc.).

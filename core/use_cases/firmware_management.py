@@ -1,0 +1,190 @@
+"""Firmware management use cases."""
+
+import hashlib
+from pathlib import Path
+from typing import List, Optional
+from uuid import UUID
+
+from core.entities.firmware import Firmware, FirmwareVersion, FirmwareType
+
+
+class FirmwareRepository:
+    """Abstract repository interface for firmware persistence."""
+    
+    async def save(self, firmware: Firmware) -> Firmware:
+        """Save firmware metadata."""
+        raise NotImplementedError
+    
+    async def find_by_id(self, firmware_id: UUID) -> Optional[Firmware]:
+        """Find firmware by ID."""
+        raise NotImplementedError
+    
+    async def find_by_name_and_version(
+        self, name: str, version: FirmwareVersion
+    ) -> Optional[Firmware]:
+        """Find firmware by name and version."""
+        raise NotImplementedError
+    
+    async def find_all(self) -> List[Firmware]:
+        """Find all firmware."""
+        raise NotImplementedError
+    
+    async def find_compatible(self, device_type: str) -> List[Firmware]:
+        """Find firmware compatible with device type."""
+        raise NotImplementedError
+    
+    async def delete(self, firmware_id: UUID) -> bool:
+        """Delete firmware."""
+        raise NotImplementedError
+
+
+class FirmwareStorageService:
+    """Abstract service interface for firmware file storage."""
+    
+    async def store_firmware_file(
+        self, file_path: Path, content: bytes
+    ) -> tuple[int, str]:
+        """Store firmware file and return size and checksum."""
+        raise NotImplementedError
+    
+    async def delete_firmware_file(self, file_path: Path) -> bool:
+        """Delete firmware file."""
+        raise NotImplementedError
+    
+    async def get_firmware_file(self, file_path: Path) -> Optional[bytes]:
+        """Get firmware file content."""
+        raise NotImplementedError
+
+
+class FirmwareManagementUseCase:
+    """Use case for managing firmware files and metadata."""
+    
+    def __init__(
+        self,
+        firmware_repository: FirmwareRepository,
+        storage_service: FirmwareStorageService,
+    ):
+        self._firmware_repository = firmware_repository
+        self._storage_service = storage_service
+    
+    async def upload_firmware(
+        self,
+        name: str,
+        version_str: str,
+        file_content: bytes,
+        firmware_type: FirmwareType,
+        target_devices: List[str],
+        description: Optional[str] = None,
+    ) -> Firmware:
+        """Upload and register new firmware."""
+        # Parse version
+        try:
+            version = FirmwareVersion.from_string(version_str)
+        except ValueError as e:
+            raise ValueError(f"Invalid version format: {e}")
+        
+        # Check if firmware already exists
+        existing = await self._firmware_repository.find_by_name_and_version(name, version)
+        if existing:
+            raise ValueError(f"Firmware {name} v{version} already exists")
+        
+        # Determine file extension based on type
+        extension_map = {
+            FirmwareType.BINARY: ".bin",
+            FirmwareType.HEX: ".hex",
+            FirmwareType.ELF: ".elf",
+        }
+        extension = extension_map.get(firmware_type, ".bin")
+        
+        # Create file path
+        file_name = f"{name}_v{version}{extension}"
+        file_path = Path("firmware") / file_name
+        
+        # Store file and get metadata
+        file_size, checksum = await self._storage_service.store_firmware_file(
+            file_path, file_content
+        )
+        
+        # Create firmware entity
+        firmware = Firmware.create(
+            name=name,
+            version=version,
+            file_path=file_path,
+            file_size=file_size,
+            checksum=checksum,
+            firmware_type=firmware_type,
+            target_devices=target_devices,
+            description=description,
+        )
+        
+        # Save to repository
+        return await self._firmware_repository.save(firmware)
+    
+    async def get_firmware(self, firmware_id: UUID) -> Optional[Firmware]:
+        """Get firmware by ID."""
+        return await self._firmware_repository.find_by_id(firmware_id)
+    
+    async def list_firmware(self) -> List[Firmware]:
+        """List all firmware."""
+        return await self._firmware_repository.find_all()
+    
+    async def list_compatible_firmware(self, device_type: str) -> List[Firmware]:
+        """List firmware compatible with device type."""
+        return await self._firmware_repository.find_compatible(device_type)
+    
+    async def get_latest_firmware(
+        self, device_type: str, firmware_name: Optional[str] = None
+    ) -> Optional[Firmware]:
+        """Get latest firmware for device type."""
+        compatible_firmware = await self._firmware_repository.find_compatible(device_type)
+        
+        if firmware_name:
+            compatible_firmware = [
+                fw for fw in compatible_firmware if fw.name == firmware_name
+            ]
+        
+        if not compatible_firmware:
+            return None
+        
+        # Sort by version and return latest
+        return max(compatible_firmware, key=lambda fw: fw.version)
+    
+    async def download_firmware(self, firmware_id: UUID) -> Optional[bytes]:
+        """Download firmware file content."""
+        firmware = await self._firmware_repository.find_by_id(firmware_id)
+        if not firmware:
+            return None
+        
+        return await self._storage_service.get_firmware_file(firmware.file_path)
+    
+    async def verify_firmware_integrity(self, firmware_id: UUID) -> bool:
+        """Verify firmware file integrity using checksum."""
+        firmware = await self._firmware_repository.find_by_id(firmware_id)
+        if not firmware:
+            return False
+        
+        file_content = await self._storage_service.get_firmware_file(firmware.file_path)
+        if not file_content:
+            return False
+        
+        # Calculate checksum
+        calculated_checksum = hashlib.sha256(file_content).hexdigest()
+        return calculated_checksum == firmware.checksum
+    
+    async def delete_firmware(self, firmware_id: UUID) -> bool:
+        """Delete firmware and its file."""
+        firmware = await self._firmware_repository.find_by_id(firmware_id)
+        if not firmware:
+            return False
+        
+        # Delete file first
+        file_deleted = await self._storage_service.delete_firmware_file(firmware.file_path)
+        
+        # Delete from repository
+        repo_deleted = await self._firmware_repository.delete(firmware_id)
+        
+        return file_deleted and repo_deleted
+    
+    def _calculate_checksum(self, content: bytes) -> str:
+        """Calculate SHA256 checksum of content."""
+        return hashlib.sha256(content).hexdigest()

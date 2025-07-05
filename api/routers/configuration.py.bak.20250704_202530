@@ -1,0 +1,465 @@
+"""Configuration management API endpoints."""
+
+import logging
+from typing import List, Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+
+from core.entities.configuration import (
+    DeviceConfiguration,
+    NetworkConfiguration,
+    MQTTConfiguration,
+    SecurityMode,
+    ConfigurationStatus,
+)
+from core.use_cases.configuration_management import ConfigurationManagementUseCase
+from ..dependencies import get_configuration_management_use_case
+
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# Pydantic models for API
+class NetworkConfigurationResponse(BaseModel):
+    """Network configuration response model."""
+    ssid: str
+    password: str
+    security_mode: str
+    ip_address: Optional[str] = None
+    subnet_mask: Optional[str] = None
+    gateway: Optional[str] = None
+    dns_servers: List[str] = []
+    
+    @classmethod
+    def from_entity(cls, config: NetworkConfiguration) -> "NetworkConfigurationResponse":
+        """Create response from network configuration entity."""
+        return cls(
+            ssid=config.ssid,
+            password=config.password,
+            security_mode=config.security_mode.value,
+            ip_address=config.ip_address,
+            subnet_mask=config.subnet_mask,
+            gateway=config.gateway,
+            dns_servers=config.dns_servers,
+        )
+
+
+class MQTTConfigurationResponse(BaseModel):
+    """MQTT configuration response model."""
+    broker_host: str
+    broker_port: int
+    username: Optional[str] = None
+    password: Optional[str] = None
+    client_id: str
+    topic_prefix: str
+    use_tls: bool = False
+    ca_cert_path: Optional[str] = None
+    
+    @classmethod
+    def from_entity(cls, config: MQTTConfiguration) -> "MQTTConfigurationResponse":
+        """Create response from MQTT configuration entity."""
+        return cls(
+            broker_host=config.broker_host,
+            broker_port=config.broker_port,
+            username=config.username,
+            password=config.password,
+            client_id=config.client_id,
+            topic_prefix=config.topic_prefix,
+            use_tls=config.use_tls,
+            ca_cert_path=config.ca_cert_path,
+        )
+
+
+class DeviceConfigurationResponse(BaseModel):
+    """Device configuration response model."""
+    id: UUID
+    name: str
+    network_config: NetworkConfigurationResponse
+    mqtt_config: MQTTConfigurationResponse
+    custom_settings: dict
+    status: str
+    created_at: str
+    updated_at: str
+    
+    @classmethod
+    def from_entity(cls, config: DeviceConfiguration) -> "DeviceConfigurationResponse":
+        """Create response from device configuration entity."""
+        return cls(
+            id=config.id,
+            name=config.name,
+            network_config=NetworkConfigurationResponse.from_entity(config.network_config),
+            mqtt_config=MQTTConfigurationResponse.from_entity(config.mqtt_config),
+            custom_settings=config.custom_settings,
+            status=config.status.value,
+            created_at=config.created_at.isoformat(),
+            updated_at=config.updated_at.isoformat(),
+        )
+
+
+class NetworkConfigurationRequest(BaseModel):
+    """Network configuration request model."""
+    ssid: str = Field(..., min_length=1, max_length=32)
+    password: str = Field(..., min_length=8, max_length=64)
+    security_mode: str = Field(default="wpa2", description="Security mode (open, wep, wpa, wpa2)")
+    ip_address: Optional[str] = Field(None, description="Static IP address (optional)")
+    subnet_mask: Optional[str] = Field(None, description="Subnet mask (optional)")
+    gateway: Optional[str] = Field(None, description="Gateway address (optional)")
+    dns_servers: List[str] = Field(default=[], description="DNS server addresses")
+
+
+class MQTTConfigurationRequest(BaseModel):
+    """MQTT configuration request model."""
+    broker_host: str = Field(..., min_length=1, max_length=255)
+    broker_port: int = Field(default=1883, ge=1, le=65535)
+    username: Optional[str] = Field(None, max_length=100)
+    password: Optional[str] = Field(None, max_length=100)
+    client_id: str = Field(..., min_length=1, max_length=100)
+    topic_prefix: str = Field(..., min_length=1, max_length=100)
+    use_tls: bool = Field(default=False)
+    ca_cert_path: Optional[str] = Field(None, max_length=500)
+
+
+class DeviceConfigurationCreateRequest(BaseModel):
+    """Device configuration creation request model."""
+    name: str = Field(..., min_length=1, max_length=100)
+    network_config: NetworkConfigurationRequest
+    mqtt_config: MQTTConfigurationRequest
+    custom_settings: dict = Field(default={})
+
+
+class DeviceConfigurationUpdateRequest(BaseModel):
+    """Device configuration update request model."""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    network_config: Optional[NetworkConfigurationRequest] = None
+    mqtt_config: Optional[MQTTConfigurationRequest] = None
+    custom_settings: Optional[dict] = None
+
+
+class ConfigurationDeploymentRequest(BaseModel):
+    """Configuration deployment request model."""
+    device_id: UUID
+    config_id: UUID
+
+
+@router.get("/", response_model=List[DeviceConfigurationResponse])
+async def list_configurations(
+    status: Optional[str] = Query(None, description="Filter by configuration status"),
+    use_case: ConfigurationManagementUseCase = Depends(get_configuration_management_use_case),
+):
+    """List all device configurations with optional filtering."""
+    try:
+        if status:
+            configurations = await use_case._configuration_repository.find_by_status(status)
+        else:
+            configurations = await use_case.list_configurations()
+        
+        return [DeviceConfigurationResponse.from_entity(config) for config in configurations]
+    
+    except Exception as e:
+        logger.error(f"Error listing configurations: {e}")
+        raise HTTPException(status_code=500, detail="Failed to list configurations")
+
+
+@router.post("/", response_model=DeviceConfigurationResponse, status_code=201)
+async def create_configuration(
+    request: DeviceConfigurationCreateRequest,
+    use_case: ConfigurationManagementUseCase = Depends(get_configuration_management_use_case),
+):
+    """Create a new device configuration."""
+    try:
+        # Validate security mode
+        try:
+            security_mode = SecurityMode(request.network_config.security_mode)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid security mode: {request.network_config.security_mode}"
+            )
+        
+        # Check if configuration with same name already exists
+        existing_config = await use_case._configuration_repository.find_by_name(request.name)
+        if existing_config:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Configuration with name '{request.name}' already exists"
+            )
+        
+        # Create network configuration
+        network_config = NetworkConfiguration(
+            ssid=request.network_config.ssid,
+            password=request.network_config.password,
+            security_mode=security_mode,
+            ip_address=request.network_config.ip_address,
+            subnet_mask=request.network_config.subnet_mask,
+            gateway=request.network_config.gateway,
+            dns_servers=request.network_config.dns_servers,
+        )
+        
+        # Create MQTT configuration
+        mqtt_config = MQTTConfiguration(
+            broker_host=request.mqtt_config.broker_host,
+            broker_port=request.mqtt_config.broker_port,
+            username=request.mqtt_config.username,
+            password=request.mqtt_config.password,
+            client_id=request.mqtt_config.client_id,
+            topic_prefix=request.mqtt_config.topic_prefix,
+            use_tls=request.mqtt_config.use_tls,
+            ca_cert_path=request.mqtt_config.ca_cert_path,
+        )
+        
+        # Create device configuration
+        config = await use_case.create_configuration(
+            name=request.name,
+            network_config=network_config,
+            mqtt_config=mqtt_config,
+            custom_settings=request.custom_settings,
+        )
+        
+        return DeviceConfigurationResponse.from_entity(config)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating configuration: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create configuration")
+
+
+@router.get("/{config_id}", response_model=DeviceConfigurationResponse)
+async def get_configuration(
+    config_id: UUID,
+    use_case: ConfigurationManagementUseCase = Depends(get_configuration_management_use_case),
+):
+    """Get a specific configuration by ID."""
+    try:
+        config = await use_case.get_configuration(config_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="Configuration not found")
+        
+        return DeviceConfigurationResponse.from_entity(config)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting configuration {config_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get configuration")
+
+
+@router.put("/{config_id}", response_model=DeviceConfigurationResponse)
+async def update_configuration(
+    config_id: UUID,
+    request: DeviceConfigurationUpdateRequest,
+    use_case: ConfigurationManagementUseCase = Depends(get_configuration_management_use_case),
+):
+    """Update a device configuration."""
+    try:
+        # Get existing configuration
+        config = await use_case.get_configuration(config_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="Configuration not found")
+        
+        # Update fields if provided
+        if request.name is not None:
+            # Check if another configuration with same name exists
+            existing_config = await use_case._configuration_repository.find_by_name(request.name)
+            if existing_config and existing_config.id != config_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Configuration with name '{request.name}' already exists"
+                )
+            config.name = request.name
+        
+        if request.network_config is not None:
+            # Validate security mode
+            try:
+                security_mode = SecurityMode(request.network_config.security_mode)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid security mode: {request.network_config.security_mode}"
+                )
+            
+            config.network_config = NetworkConfiguration(
+                ssid=request.network_config.ssid,
+                password=request.network_config.password,
+                security_mode=security_mode,
+                ip_address=request.network_config.ip_address,
+                subnet_mask=request.network_config.subnet_mask,
+                gateway=request.network_config.gateway,
+                dns_servers=request.network_config.dns_servers,
+            )
+        
+        if request.mqtt_config is not None:
+            config.mqtt_config = MQTTConfiguration(
+                broker_host=request.mqtt_config.broker_host,
+                broker_port=request.mqtt_config.broker_port,
+                username=request.mqtt_config.username,
+                password=request.mqtt_config.password,
+                client_id=request.mqtt_config.client_id,
+                topic_prefix=request.mqtt_config.topic_prefix,
+                use_tls=request.mqtt_config.use_tls,
+                ca_cert_path=request.mqtt_config.ca_cert_path,
+            )
+        
+        if request.custom_settings is not None:
+            config.custom_settings = request.custom_settings
+        
+        # Save updated configuration
+        updated_config = await use_case.update_configuration(config_id, config)
+        
+        return DeviceConfigurationResponse.from_entity(updated_config)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating configuration {config_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update configuration")
+
+
+@router.delete("/{config_id}", status_code=204)
+async def delete_configuration(
+    config_id: UUID,
+    use_case: ConfigurationManagementUseCase = Depends(get_configuration_management_use_case),
+):
+    """Delete a device configuration."""
+    try:
+        success = await use_case.delete_configuration(config_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Configuration not found")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting configuration {config_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete configuration")
+
+
+@router.post("/deploy", response_model=dict)
+async def deploy_configuration(
+    request: ConfigurationDeploymentRequest,
+    use_case: ConfigurationManagementUseCase = Depends(get_configuration_management_use_case),
+):
+    """Deploy configuration to a device."""
+    try:
+        success = await use_case.deploy_configuration(request.device_id, request.config_id)
+        
+        return {
+            "device_id": request.device_id,
+            "config_id": request.config_id,
+            "deployed": success,
+            "message": "Configuration deployed successfully" if success else "Failed to deploy configuration"
+        }
+    
+    except Exception as e:
+        logger.error(f"Error deploying configuration: {e}")
+        raise HTTPException(status_code=500, detail="Failed to deploy configuration")
+
+
+@router.post("/{config_id}/validate", response_model=dict)
+async def validate_configuration(
+    config_id: UUID,
+    use_case: ConfigurationManagementUseCase = Depends(get_configuration_management_use_case),
+):
+    """Validate a device configuration."""
+    try:
+        is_valid = await use_case.validate_configuration(config_id)
+        
+        return {
+            "config_id": config_id,
+            "is_valid": is_valid,
+            "message": "Configuration is valid" if is_valid else "Configuration validation failed"
+        }
+    
+    except Exception as e:
+        logger.error(f"Error validating configuration {config_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to validate configuration")
+
+
+@router.post("/{config_id}/test", response_model=dict)
+async def test_configuration(
+    config_id: UUID,
+    device_id: UUID = Query(..., description="Device ID to test configuration with"),
+    use_case: ConfigurationManagementUseCase = Depends(get_configuration_management_use_case),
+):
+    """Test configuration with a device."""
+    try:
+        success = await use_case.test_configuration(config_id, device_id)
+        
+        return {
+            "config_id": config_id,
+            "device_id": device_id,
+            "test_passed": success,
+            "message": "Configuration test passed" if success else "Configuration test failed"
+        }
+    
+    except Exception as e:
+        logger.error(f"Error testing configuration {config_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to test configuration")
+
+
+@router.post("/{config_id}/clone", response_model=DeviceConfigurationResponse)
+async def clone_configuration(
+    config_id: UUID,
+    new_name: str = Query(..., description="Name for the cloned configuration"),
+    use_case: ConfigurationManagementUseCase = Depends(get_configuration_management_use_case),
+):
+    """Clone an existing configuration."""
+    try:
+        # Check if configuration with new name already exists
+        existing_config = await use_case._configuration_repository.find_by_name(new_name)
+        if existing_config:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Configuration with name '{new_name}' already exists"
+            )
+        
+        cloned_config = await use_case.clone_configuration(config_id, new_name)
+        if not cloned_config:
+            raise HTTPException(status_code=404, detail="Configuration not found")
+        
+        return DeviceConfigurationResponse.from_entity(cloned_config)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cloning configuration {config_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to clone configuration")
+
+
+@router.get("/device/{device_id}", response_model=DeviceConfigurationResponse)
+async def get_device_configuration(
+    device_id: UUID,
+    use_case: ConfigurationManagementUseCase = Depends(get_configuration_management_use_case),
+):
+    """Get configuration assigned to a device."""
+    try:
+        config = await use_case._configuration_repository.find_by_device_id(device_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="No configuration found for device")
+        
+        return DeviceConfigurationResponse.from_entity(config)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting device configuration for {device_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get device configuration")
+
+
+@router.get("/security-modes/available")
+async def get_available_security_modes():
+    """Get list of available security modes."""
+    return {
+        "security_modes": [mode.value for mode in SecurityMode]
+    }
+
+
+@router.get("/statuses/available")
+async def get_available_configuration_statuses():
+    """Get list of available configuration statuses."""
+    return {
+        "configuration_statuses": [status.value for status in ConfigurationStatus]
+    }

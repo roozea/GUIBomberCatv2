@@ -1,0 +1,365 @@
+"""Firmware management API endpoints."""
+
+import logging
+from typing import List, Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+
+from core.entities.firmware import Firmware, FirmwareType
+from core.use_cases.firmware_management import FirmwareManagementUseCase
+from api.dependencies import get_firmware_management_use_case
+
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# Pydantic models for API
+class FirmwareResponse(BaseModel):
+    """Firmware response model."""
+    id: UUID
+    name: str
+    version: str
+    firmware_type: str
+    compatible_devices: List[str]
+    file_path: str
+    file_size: int
+    checksum: str
+    description: Optional[str] = None
+    created_at: str
+    updated_at: str
+    
+    @classmethod
+    def from_entity(cls, firmware: Firmware) -> "FirmwareResponse":
+        """Create response from firmware entity."""
+        return cls(
+            id=firmware.id,
+            name=firmware.name,
+            version=str(firmware.version),
+            firmware_type=firmware.firmware_type.value,
+            compatible_devices=firmware.compatible_devices,
+            file_path=firmware.file_path,
+            file_size=firmware.file_size,
+            checksum=firmware.checksum,
+            description=firmware.description,
+            created_at=firmware.created_at.isoformat(),
+            updated_at=firmware.updated_at.isoformat(),
+        )
+
+
+class FirmwareCreateRequest(BaseModel):
+    """Firmware creation request model."""
+    name: str = Field(..., min_length=1, max_length=100)
+    version: str = Field(..., min_length=1, max_length=50)
+    firmware_type: str = Field(..., description="Firmware type (application, bootloader, etc.)")
+    compatible_devices: List[str] = Field(..., description="List of compatible device types")
+    description: Optional[str] = Field(None, max_length=500)
+
+
+class FirmwareUpdateRequest(BaseModel):
+    """Firmware update request model."""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    compatible_devices: Optional[List[str]] = Field(None, description="List of compatible device types")
+
+
+class FirmwareListResponse(BaseModel):
+    """Firmware list response model."""
+    firmware: List[FirmwareResponse]
+    total_count: int
+    page: int
+    page_size: int
+
+
+@router.get("/", response_model=List[FirmwareResponse])
+async def list_firmware(
+    device_type: Optional[str] = Query(None, description="Filter by compatible device type"),
+    name: Optional[str] = Query(None, description="Filter by firmware name"),
+    latest_only: bool = Query(False, description="Return only latest versions"),
+    use_case: FirmwareManagementUseCase = Depends(get_firmware_management_use_case),
+):
+    """List all firmware with optional filtering."""
+    try:
+        if device_type:
+            firmware_list = await use_case._firmware_repository.find_by_device_type(device_type)
+            if latest_only:
+                firmware_list = await use_case._firmware_repository.find_latest_by_device_type(device_type)
+        elif name:
+            firmware_list = await use_case._firmware_repository.find_by_name(name)
+            if latest_only and firmware_list:
+                firmware_list = [max(firmware_list, key=lambda fw: fw.version)]
+        else:
+            firmware_list = await use_case.list_firmware()
+        
+        if name and not device_type:
+            firmware_list = [fw for fw in firmware_list if fw.name == name]
+        
+        return [FirmwareResponse.from_entity(firmware) for firmware in firmware_list]
+    
+    except Exception as e:
+        logger.error(f"Error listing firmware: {e}")
+        raise HTTPException(status_code=500, detail="Failed to list firmware")
+
+
+@router.post("/upload", response_model=FirmwareResponse, status_code=201)
+async def upload_firmware(
+    file: UploadFile = File(...),
+    name: str = Query(..., description="Firmware name"),
+    version: str = Query(..., description="Firmware version"),
+    firmware_type: str = Query(..., description="Firmware type"),
+    compatible_devices: str = Query(..., description="Comma-separated list of compatible device types"),
+    description: Optional[str] = Query(None, description="Firmware description"),
+    use_case: FirmwareManagementUseCase = Depends(get_firmware_management_use_case),
+):
+    """Upload a new firmware file."""
+    try:
+        # Validate firmware type
+        try:
+            fw_type = FirmwareType(firmware_type)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid firmware type: {firmware_type}"
+            )
+        
+        # Parse compatible devices
+        device_list = [device.strip() for device in compatible_devices.split(",") if device.strip()]
+        if not device_list:
+            raise HTTPException(
+                status_code=400,
+                detail="At least one compatible device type must be specified"
+            )
+        
+        # Check if firmware with same name and version already exists
+        existing_firmware = await use_case._firmware_repository.find_by_name_and_version(name, version)
+        if existing_firmware:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Firmware '{name}' version '{version}' already exists"
+            )
+        
+        # Read file content
+        file_content = await file.read()
+        if not file_content:
+            raise HTTPException(status_code=400, detail="Empty file uploaded")
+        
+        # Upload firmware
+        firmware = await use_case.upload_firmware(
+            name=name,
+            version=version,
+            firmware_type=fw_type,
+            compatible_devices=device_list,
+            file_content=file_content,
+            description=description,
+        )
+        
+        return FirmwareResponse.from_entity(firmware)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading firmware: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload firmware")
+
+
+@router.get("/{firmware_id}", response_model=FirmwareResponse)
+async def get_firmware(
+    firmware_id: UUID,
+    use_case: FirmwareManagementUseCase = Depends(get_firmware_management_use_case),
+):
+    """Get a specific firmware by ID."""
+    try:
+        firmware = await use_case.get_firmware(firmware_id)
+        if not firmware:
+            raise HTTPException(status_code=404, detail="Firmware not found")
+        
+        return FirmwareResponse.from_entity(firmware)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting firmware {firmware_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get firmware")
+
+
+@router.put("/{firmware_id}", response_model=FirmwareResponse)
+async def update_firmware(
+    firmware_id: UUID,
+    request: FirmwareUpdateRequest,
+    use_case: FirmwareManagementUseCase = Depends(get_firmware_management_use_case),
+):
+    """Update firmware metadata."""
+    try:
+        # Get existing firmware
+        firmware = await use_case.get_firmware(firmware_id)
+        if not firmware:
+            raise HTTPException(status_code=404, detail="Firmware not found")
+        
+        # Update fields if provided
+        if request.name is not None:
+            # Check if another firmware with same name and version exists
+            existing_firmware = await use_case._firmware_repository.find_by_name_and_version(
+                request.name, str(firmware.version)
+            )
+            if existing_firmware and existing_firmware.id != firmware_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Firmware '{request.name}' version '{firmware.version}' already exists"
+                )
+            firmware.name = request.name
+        
+        if request.description is not None:
+            firmware.description = request.description
+        
+        if request.compatible_devices is not None:
+            firmware.compatible_devices = request.compatible_devices
+        
+        # Save updated firmware
+        updated_firmware = await use_case._firmware_repository.save(firmware)
+        
+        return FirmwareResponse.from_entity(updated_firmware)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating firmware {firmware_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update firmware")
+
+
+@router.delete("/{firmware_id}", status_code=204)
+async def delete_firmware(
+    firmware_id: UUID,
+    use_case: FirmwareManagementUseCase = Depends(get_firmware_management_use_case),
+):
+    """Delete a firmware."""
+    try:
+        success = await use_case.delete_firmware(firmware_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Firmware not found")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting firmware {firmware_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete firmware")
+
+
+@router.get("/{firmware_id}/download")
+async def download_firmware(
+    firmware_id: UUID,
+    use_case: FirmwareManagementUseCase = Depends(get_firmware_management_use_case),
+):
+    """Download firmware file."""
+    try:
+        firmware = await use_case.get_firmware(firmware_id)
+        if not firmware:
+            raise HTTPException(status_code=404, detail="Firmware not found")
+        
+        # Check if file exists
+        if not firmware.file_exists():
+            raise HTTPException(status_code=404, detail="Firmware file not found")
+        
+        # Return file response
+        filename = f"{firmware.name}_v{firmware.version}.bin"
+        return FileResponse(
+            path=firmware.file_path,
+            filename=filename,
+            media_type="application/octet-stream"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading firmware {firmware_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to download firmware")
+
+
+@router.post("/{firmware_id}/verify", response_model=dict)
+async def verify_firmware(
+    firmware_id: UUID,
+    use_case: FirmwareManagementUseCase = Depends(get_firmware_management_use_case),
+):
+    """Verify firmware file integrity."""
+    try:
+        is_valid = await use_case.verify_firmware_integrity(firmware_id)
+        
+        return {
+            "firmware_id": firmware_id,
+            "is_valid": is_valid,
+            "message": "Firmware integrity verified" if is_valid else "Firmware integrity check failed"
+        }
+    
+    except Exception as e:
+        logger.error(f"Error verifying firmware {firmware_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to verify firmware")
+
+
+@router.get("/device-type/{device_type}/compatible", response_model=List[FirmwareResponse])
+async def get_compatible_firmware(
+    device_type: str,
+    latest_only: bool = Query(False, description="Return only latest versions"),
+    use_case: FirmwareManagementUseCase = Depends(get_firmware_management_use_case),
+):
+    """Get firmware compatible with a specific device type."""
+    try:
+        if latest_only:
+            firmware_list = await use_case._firmware_repository.find_latest_by_device_type(device_type)
+        else:
+            firmware_list = await use_case._firmware_repository.find_by_device_type(device_type)
+        
+        return [FirmwareResponse.from_entity(firmware) for firmware in firmware_list]
+    
+    except Exception as e:
+        logger.error(f"Error getting compatible firmware for {device_type}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get compatible firmware")
+
+
+@router.get("/types/available")
+async def get_available_firmware_types():
+    """Get list of available firmware types."""
+    return {
+        "firmware_types": [fw_type.value for fw_type in FirmwareType]
+    }
+
+
+@router.get("/statistics")
+async def get_firmware_statistics(
+    use_case: FirmwareManagementUseCase = Depends(get_firmware_management_use_case),
+):
+    """Get firmware statistics."""
+    try:
+        all_firmware = await use_case.list_firmware()
+        
+        # Calculate statistics
+        total_firmware = len(all_firmware)
+        firmware_by_type = {}
+        firmware_by_device = {}
+        total_size = 0
+        
+        for firmware in all_firmware:
+            # Count by type
+            fw_type = firmware.firmware_type.value
+            firmware_by_type[fw_type] = firmware_by_type.get(fw_type, 0) + 1
+            
+            # Count by device type
+            for device_type in firmware.compatible_devices:
+                firmware_by_device[device_type] = firmware_by_device.get(device_type, 0) + 1
+            
+            # Sum file sizes
+            total_size += firmware.file_size
+        
+        return {
+            "total_firmware": total_firmware,
+            "firmware_by_type": firmware_by_type,
+            "firmware_by_device_type": firmware_by_device,
+            "total_size_bytes": total_size,
+            "total_size_mb": round(total_size / (1024 * 1024), 2),
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting firmware statistics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get firmware statistics")

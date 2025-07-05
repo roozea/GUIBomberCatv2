@@ -1,0 +1,375 @@
+"""Módulo de backup y rollback para configuración BomberCat.
+
+Este módulo proporciona funcionalidades para hacer backup de la configuración
+actual del dispositivo y realizar rollback en caso de fallos.
+"""
+
+import json
+import logging
+import time
+from typing import Dict, Any, Optional
+from datetime import datetime
+from pathlib import Path
+
+import serial
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+from .validators import ConfigValidator, BomberCatConfig
+
+
+logger = logging.getLogger(__name__)
+
+
+class BackupError(Exception):
+    """Error durante operaciones de backup."""
+    pass
+
+
+class RollbackError(Exception):
+    """Error durante operaciones de rollback."""
+    pass
+
+
+class ConfigBackupManager:
+    """Gestor de backup y rollback de configuración.
+    
+    Maneja el backup automático de configuraciones y rollback
+    en caso de fallos durante la aplicación de nuevas configuraciones.
+    """
+    
+    def __init__(self, backup_dir: Optional[Path] = None):
+        """Inicializar gestor de backup.
+        
+        Args:
+            backup_dir: Directorio para almacenar backups locales
+        """
+        self.backup_dir = backup_dir or Path("./config_backups")
+        self.backup_dir.mkdir(exist_ok=True)
+        
+    def _send_command(self, port: serial.Serial, command: str, 
+                     timeout: float = 5.0) -> Dict[str, Any]:
+        """Enviar comando al dispositivo y obtener respuesta.
+        
+        Args:
+            port: Puerto serie conectado al dispositivo
+            command: Comando a enviar
+            timeout: Timeout para la respuesta
+            
+        Returns:
+            dict: Respuesta del dispositivo parseada como JSON
+            
+        Raises:
+            BackupError: Si hay error en la comunicación
+        """
+        try:
+            # Limpiar buffer de entrada
+            port.reset_input_buffer()
+            
+            # Enviar comando
+            command_line = f"{command}\n"
+            port.write(command_line.encode('utf-8'))
+            port.flush()
+            
+            logger.debug(f"Comando enviado: {command}")
+            
+            # Leer respuesta con timeout
+            start_time = time.time()
+            response_line = ""
+            
+            while time.time() - start_time < timeout:
+                if port.in_waiting > 0:
+                    char = port.read(1).decode('utf-8', errors='ignore')
+                    if char == '\n':
+                        break
+                    response_line += char
+                else:
+                    time.sleep(0.01)  # Pequeña pausa para evitar busy waiting
+            
+            if not response_line:
+                raise BackupError(f"Timeout esperando respuesta para comando: {command}")
+            
+            logger.debug(f"Respuesta recibida: {response_line}")
+            
+            # Parsear respuesta JSON
+            try:
+                response = json.loads(response_line.strip())
+                return response
+            except json.JSONDecodeError as e:
+                raise BackupError(f"Respuesta no es JSON válido: {response_line}") from e
+                
+        except serial.SerialException as e:
+            raise BackupError(f"Error de comunicación serie: {e}") from e
+        except Exception as e:
+            raise BackupError(f"Error inesperado enviando comando: {e}") from e
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((serial.SerialException, BackupError))
+    )
+    def backup_config(self, port: serial.Serial) -> Dict[str, Any]:
+        """Hacer backup de la configuración actual del dispositivo.
+        
+        Args:
+            port: Puerto serie conectado al dispositivo
+            
+        Returns:
+            dict: Configuración actual del dispositivo
+            
+        Raises:
+            BackupError: Si no se puede obtener la configuración
+        """
+        try:
+            logger.info("Iniciando backup de configuración")
+            
+            # Enviar comando para obtener configuración actual
+            response = self._send_command(port, "GET_CONFIG")
+            
+            # Verificar respuesta
+            if response.get("status") != "OK":
+                error_msg = response.get("msg", "Error desconocido")
+                raise BackupError(f"Error obteniendo configuración: {error_msg}")
+            
+            # Extraer datos de configuración
+            config_data = response.get("data", {})
+            
+            if not config_data:
+                raise BackupError("Respuesta no contiene datos de configuración")
+            
+            # Validar configuración obtenida
+            try:
+                validated_config = ConfigValidator.validate_config(config_data)
+                logger.info("Backup de configuración completado exitosamente")
+                
+                # Guardar backup local con timestamp
+                self._save_local_backup(validated_config.model_dump())
+                
+                return validated_config.model_dump()
+                
+            except Exception as e:
+                logger.warning(f"Configuración obtenida no es válida: {e}")
+                # Retornar configuración sin validar para permitir rollback
+                return config_data
+                
+        except Exception as e:
+            logger.error(f"Error durante backup: {e}")
+            raise BackupError(f"No se pudo hacer backup de la configuración: {e}") from e
+    
+    def _save_local_backup(self, config_data: Dict[str, Any]) -> Path:
+        """Guardar backup local con timestamp.
+        
+        Args:
+            config_data: Datos de configuración a guardar
+            
+        Returns:
+            Path: Ruta del archivo de backup creado
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = self.backup_dir / f"config_backup_{timestamp}.json"
+        
+        backup_data = {
+            "timestamp": datetime.now().isoformat(),
+            "config": config_data
+        }
+        
+        try:
+            with open(backup_file, 'w', encoding='utf-8') as f:
+                json.dump(backup_data, f, indent=2, ensure_ascii=False)
+            
+            logger.debug(f"Backup local guardado: {backup_file}")
+            return backup_file
+            
+        except Exception as e:
+            logger.warning(f"No se pudo guardar backup local: {e}")
+            return backup_file  # Retornar path aunque falle
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((serial.SerialException, RollbackError))
+    )
+    def rollback(self, port: serial.Serial, backup_config: Dict[str, Any]) -> bool:
+        """Realizar rollback a configuración anterior.
+        
+        Args:
+            port: Puerto serie conectado al dispositivo
+            backup_config: Configuración de backup a restaurar
+            
+        Returns:
+            bool: True si el rollback fue exitoso
+            
+        Raises:
+            RollbackError: Si el rollback falla
+        """
+        try:
+            logger.info("Iniciando rollback de configuración")
+            
+            # Preparar comando de configuración
+            config_command = {
+                "command": "SET_CONFIG",
+                "data": backup_config
+            }
+            
+            command_json = json.dumps(config_command, separators=(',', ':'))
+            
+            # Enviar configuración de rollback
+            response = self._send_command(port, command_json)
+            
+            # Verificar respuesta
+            if response.get("status") != "OK":
+                error_msg = response.get("msg", "Error desconocido")
+                raise RollbackError(f"Error durante rollback: {error_msg}")
+            
+            logger.info("Rollback completado exitosamente")
+            
+            # Verificar que la configuración se aplicó correctamente
+            try:
+                current_config = self.backup_config(port)
+                if self._configs_match(backup_config, current_config):
+                    logger.info("Rollback verificado exitosamente")
+                    return True
+                else:
+                    logger.warning("Rollback aplicado pero configuración no coincide")
+                    return True  # Aún consideramos exitoso
+            except Exception as e:
+                logger.warning(f"No se pudo verificar rollback: {e}")
+                return True  # Asumir éxito si no se puede verificar
+                
+        except Exception as e:
+            logger.error(f"Error durante rollback: {e}")
+            raise RollbackError(f"No se pudo realizar rollback: {e}") from e
+    
+    def _configs_match(self, config1: Dict[str, Any], 
+                      config2: Dict[str, Any]) -> bool:
+        """Verificar si dos configuraciones coinciden.
+        
+        Args:
+            config1: Primera configuración
+            config2: Segunda configuración
+            
+        Returns:
+            bool: True si las configuraciones coinciden
+        """
+        # Comparar campos principales
+        key_fields = ["mode", "wifi_ssid", "wifi_password", "encryption_key"]
+        
+        for field in key_fields:
+            if config1.get(field) != config2.get(field):
+                return False
+        
+        return True
+    
+    def get_latest_backup(self) -> Optional[Dict[str, Any]]:
+        """Obtener el backup local más reciente.
+        
+        Returns:
+            dict: Configuración del backup más reciente, None si no hay backups
+        """
+        try:
+            backup_files = list(self.backup_dir.glob("config_backup_*.json"))
+            
+            if not backup_files:
+                return None
+            
+            # Ordenar por fecha de modificación (más reciente primero)
+            latest_backup = max(backup_files, key=lambda f: f.stat().st_mtime)
+            
+            with open(latest_backup, 'r', encoding='utf-8') as f:
+                backup_data = json.load(f)
+            
+            return backup_data.get("config")
+            
+        except Exception as e:
+            logger.warning(f"Error obteniendo último backup: {e}")
+            return None
+    
+    def cleanup_old_backups(self, keep_count: int = 10) -> int:
+        """Limpiar backups antiguos manteniendo solo los más recientes.
+        
+        Args:
+            keep_count: Número de backups a mantener
+            
+        Returns:
+            int: Número de backups eliminados
+        """
+        try:
+            backup_files = list(self.backup_dir.glob("config_backup_*.json"))
+            
+            if len(backup_files) <= keep_count:
+                return 0
+            
+            # Ordenar por fecha de modificación (más reciente primero)
+            backup_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            
+            # Eliminar backups antiguos
+            deleted_count = 0
+            for backup_file in backup_files[keep_count:]:
+                try:
+                    backup_file.unlink()
+                    deleted_count += 1
+                except Exception as e:
+                    logger.warning(f"No se pudo eliminar backup {backup_file}: {e}")
+            
+            logger.info(f"Eliminados {deleted_count} backups antiguos")
+            return deleted_count
+            
+        except Exception as e:
+            logger.warning(f"Error limpiando backups antiguos: {e}")
+            return 0
+
+
+# Instancia global del gestor de backup
+_backup_manager = ConfigBackupManager()
+
+
+# Funciones de conveniencia para compatibilidad
+def backup_config(port: serial.Serial) -> Dict[str, Any]:
+    """Hacer backup de la configuración actual del dispositivo.
+    
+    Args:
+        port: Puerto serie conectado al dispositivo
+        
+    Returns:
+        dict: Configuración actual del dispositivo
+        
+    Raises:
+        BackupError: Si no se puede obtener la configuración
+    """
+    return _backup_manager.backup_config(port)
+
+
+def rollback(port: serial.Serial, backup_config: Dict[str, Any]) -> bool:
+    """Realizar rollback a configuración anterior.
+    
+    Args:
+        port: Puerto serie conectado al dispositivo
+        backup_config: Configuración de backup a restaurar
+        
+    Returns:
+        bool: True si el rollback fue exitoso
+        
+    Raises:
+        RollbackError: Si el rollback falla
+    """
+    return _backup_manager.rollback(port, backup_config)
+
+
+def get_latest_backup() -> Optional[Dict[str, Any]]:
+    """Obtener el backup local más reciente.
+    
+    Returns:
+        dict: Configuración del backup más reciente, None si no hay backups
+    """
+    return _backup_manager.get_latest_backup()
+
+
+def cleanup_old_backups(keep_count: int = 10) -> int:
+    """Limpiar backups antiguos manteniendo solo los más recientes.
+    
+    Args:
+        keep_count: Número de backups a mantener
+        
+    Returns:
+        int: Número de backups eliminados
+    """
+    return _backup_manager.cleanup_old_backups(keep_count)

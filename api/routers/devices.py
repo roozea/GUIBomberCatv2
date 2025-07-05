@@ -1,0 +1,294 @@
+"""Device management API endpoints."""
+
+import logging
+from typing import List, Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+
+from core.entities.device import Device, DeviceType, DeviceStatus
+from core.use_cases.device_management import DeviceManagementUseCase
+from api.dependencies import get_device_management_use_case
+
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# Pydantic models for API
+class DeviceResponse(BaseModel):
+    """Device response model."""
+    id: UUID
+    name: str
+    device_type: str
+    status: str
+    firmware_version: Optional[str] = None
+    network_info: Optional[dict] = None
+    last_seen: Optional[str] = None
+    created_at: str
+    updated_at: str
+    
+    @classmethod
+    def from_entity(cls, device: Device) -> "DeviceResponse":
+        """Create response from device entity."""
+        return cls(
+            id=device.id,
+            name=device.name,
+            device_type=device.device_type.value,
+            status=device.status.value,
+            firmware_version=device.firmware_version,
+            network_info=device.network_info,
+            last_seen=device.last_seen.isoformat() if device.last_seen else None,
+            created_at=device.created_at.isoformat(),
+            updated_at=device.updated_at.isoformat(),
+        )
+
+
+class DeviceCreateRequest(BaseModel):
+    """Device creation request model."""
+    name: str = Field(..., min_length=1, max_length=100)
+    device_type: str = Field(..., description="Device type (esp32, esp8266, etc.)")
+    serial_port: Optional[str] = Field(None, description="Serial port for the device")
+    description: Optional[str] = Field(None, max_length=500)
+
+
+class DeviceUpdateRequest(BaseModel):
+    """Device update request model."""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+
+
+class DeviceDiscoveryResponse(BaseModel):
+    """Device discovery response model."""
+    discovered_devices: List[dict]
+    total_found: int
+
+
+@router.get("/", response_model=List[DeviceResponse])
+async def list_devices(
+    device_type: Optional[str] = Query(None, description="Filter by device type"),
+    status: Optional[str] = Query(None, description="Filter by device status"),
+    use_case: DeviceManagementUseCase = Depends(get_device_management_use_case),
+):
+    """List all devices with optional filtering."""
+    try:
+        if device_type and status:
+            # Filter by both type and status
+            all_devices = await use_case.list_devices()
+            devices = [
+                device for device in all_devices
+                if device.device_type.value == device_type and device.status.value == status
+            ]
+        elif device_type:
+            devices = await use_case._device_repository.find_by_device_type(device_type)
+        elif status:
+            devices = await use_case._device_repository.find_by_status(status)
+        else:
+            devices = await use_case.list_devices()
+        
+        return [DeviceResponse.from_entity(device) for device in devices]
+    
+    except Exception as e:
+        logger.error(f"Error listing devices: {e}")
+        raise HTTPException(status_code=500, detail="Failed to list devices")
+
+
+@router.post("/", response_model=DeviceResponse, status_code=201)
+async def create_device(
+    request: DeviceCreateRequest,
+    use_case: DeviceManagementUseCase = Depends(get_device_management_use_case),
+):
+    """Create a new device."""
+    try:
+        # Validate device type
+        try:
+            device_type = DeviceType(request.device_type)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid device type: {request.device_type}"
+            )
+        
+        # Check if device with same name already exists
+        existing_device = await use_case._device_repository.find_by_name(request.name)
+        if existing_device:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Device with name '{request.name}' already exists"
+            )
+        
+        # Create device
+        device = await use_case.register_device(
+            name=request.name,
+            device_type=device_type,
+            serial_port=request.serial_port,
+        )
+        
+        return DeviceResponse.from_entity(device)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating device: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create device")
+
+
+@router.get("/discover", response_model=DeviceDiscoveryResponse)
+async def discover_devices(
+    use_case: DeviceManagementUseCase = Depends(get_device_management_use_case),
+):
+    """Discover devices connected to the system."""
+    try:
+        discovered = await use_case.discover_devices()
+        
+        return DeviceDiscoveryResponse(
+            discovered_devices=discovered,
+            total_found=len(discovered)
+        )
+    
+    except Exception as e:
+        logger.error(f"Error discovering devices: {e}")
+        raise HTTPException(status_code=500, detail="Failed to discover devices")
+
+
+@router.get("/{device_id}", response_model=DeviceResponse)
+async def get_device(
+    device_id: UUID,
+    use_case: DeviceManagementUseCase = Depends(get_device_management_use_case),
+):
+    """Get a specific device by ID."""
+    try:
+        device = await use_case.get_device(device_id)
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+        
+        return DeviceResponse.from_entity(device)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting device {device_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get device")
+
+
+@router.put("/{device_id}", response_model=DeviceResponse)
+async def update_device(
+    device_id: UUID,
+    request: DeviceUpdateRequest,
+    use_case: DeviceManagementUseCase = Depends(get_device_management_use_case),
+):
+    """Update a device."""
+    try:
+        # Get existing device
+        device = await use_case.get_device(device_id)
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+        
+        # Update fields if provided
+        if request.name is not None:
+            # Check if another device with same name exists
+            existing_device = await use_case._device_repository.find_by_name(request.name)
+            if existing_device and existing_device.id != device_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Device with name '{request.name}' already exists"
+                )
+            device.name = request.name
+        
+        # Save updated device
+        updated_device = await use_case._device_repository.save(device)
+        
+        return DeviceResponse.from_entity(updated_device)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating device {device_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update device")
+
+
+@router.delete("/{device_id}", status_code=204)
+async def delete_device(
+    device_id: UUID,
+    use_case: DeviceManagementUseCase = Depends(get_device_management_use_case),
+):
+    """Delete a device."""
+    try:
+        success = await use_case.remove_device(device_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Device not found")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting device {device_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete device")
+
+
+@router.post("/{device_id}/status", response_model=DeviceResponse)
+async def update_device_status(
+    device_id: UUID,
+    status: str = Query(..., description="New device status"),
+    use_case: DeviceManagementUseCase = Depends(get_device_management_use_case),
+):
+    """Update device status."""
+    try:
+        # Validate status
+        try:
+            device_status = DeviceStatus(status)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid device status: {status}"
+            )
+        
+        device = await use_case.update_device_status(device_id, device_status)
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+        
+        return DeviceResponse.from_entity(device)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating device status {device_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update device status")
+
+
+@router.post("/{device_id}/network-info", response_model=DeviceResponse)
+async def update_device_network_info(
+    device_id: UUID,
+    network_info: dict,
+    use_case: DeviceManagementUseCase = Depends(get_device_management_use_case),
+):
+    """Update device network information."""
+    try:
+        device = await use_case.update_device_network_info(device_id, network_info)
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+        
+        return DeviceResponse.from_entity(device)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating device network info {device_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update device network info")
+
+
+@router.get("/types/available")
+async def get_available_device_types():
+    """Get list of available device types."""
+    return {
+        "device_types": [device_type.value for device_type in DeviceType]
+    }
+
+
+@router.get("/statuses/available")
+async def get_available_device_statuses():
+    """Get list of available device statuses."""
+    return {
+        "device_statuses": [status.value for status in DeviceStatus]
+    }

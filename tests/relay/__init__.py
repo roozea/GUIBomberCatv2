@@ -1,0 +1,1 @@
+"""Tests para el módulo NFC Relay."""

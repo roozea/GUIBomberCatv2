@@ -1,0 +1,270 @@
+Metadata-Version: 2.4
+Name: bombercat-integrator
+Version: 0.1.0
+Summary: BomberCat IoT Device Integration Platform
+Author-email: BomberCat Team <team@bombercat.com>
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi==0.115.*
+Requires-Dist: flet==0.28.*
+Requires-Dist: esptool==4.6.*
+Requires-Dist: pyserial>=3.5
+Requires-Dist: boto3>=1.26.0
+Requires-Dist: awsiotsdk>=1.11.0
+Requires-Dist: uvicorn[standard]>=0.20.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: python-multipart>=0.0.6
+Requires-Dist: aiofiles>=23.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: flake8>=6.0.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+
+# BomberCat Integrator
+
+A comprehensive IoT device integration platform for managing BomberCat devices, firmware, and configurations.
+
+## Features
+
+- **Device Management**: Discover, register, and manage IoT devices
+- **Firmware Management**: Upload, version, and deploy firmware to devices
+- **Configuration Management**: Create, deploy, and manage device configurations
+- **Device Flashing**: Flash firmware to ESP32/ESP8266 devices with real-time progress tracking
+- **AWS IoT Integration**: Deploy configurations and manage devices through AWS IoT Core
+- **REST API**: Complete RESTful API with interactive documentation
+- **Real-time Updates**: WebSocket support for live progress monitoring
+
+## Architecture
+
+The project follows Clean Architecture principles with clear separation of concerns:
+
+```
+├── core/                   # Business logic and entities
+│   ├── entities/          # Domain models
+│   └── use_cases/         # Business use cases
+├── adapters/              # Interface adapters
+│   └── interfaces/        # Abstract interfaces
+├── infrastructure/        # External service implementations
+├── modules/               # Specialized modules
+│   └── bombercat_flash/   # Firmware flashing module
+├── api/                   # REST API layer
+│   └── routers/          # API endpoints
+└── scripts/               # Utility scripts
+```
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.11 or higher
+- pip or poetry for dependency management
+
+### Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd BomberCatIntegratorV2_TM
+```
+
+2. Install dependencies:
+```bash
+pip install -e .
+```
+
+Or using the requirements file:
+```bash
+pip install -r requirements.txt
+```
+
+3. Set up environment variables (optional):
+```bash
+cp .env.example .env
+# Edit .env with your AWS credentials and other settings
+```
+
+### Running the API Server
+
+```bash
+# Development mode with auto-reload
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+
+# Or using the installed script
+bombercat-integrator
+```
+
+The API will be available at:
+- **API Documentation**: http://localhost:8000/docs
+- **Alternative Docs**: http://localhost:8000/redoc
+- **Health Check**: http://localhost:8000/health
+
+## API Endpoints
+
+### Devices
+- `GET /api/v1/devices` - List all devices
+- `POST /api/v1/devices` - Create a new device
+- `GET /api/v1/devices/discover` - Discover connected devices
+- `GET /api/v1/devices/{device_id}` - Get device details
+- `PUT /api/v1/devices/{device_id}` - Update device
+- `DELETE /api/v1/devices/{device_id}` - Delete device
+
+### Firmware
+- `GET /api/v1/firmware` - List firmware
+- `POST /api/v1/firmware` - Upload firmware
+- `GET /api/v1/firmware/{firmware_id}` - Get firmware details
+- `PUT /api/v1/firmware/{firmware_id}` - Update firmware
+- `DELETE /api/v1/firmware/{firmware_id}` - Delete firmware
+- `GET /api/v1/firmware/{firmware_id}/download` - Download firmware file
+
+### Configuration
+- `GET /api/v1/configuration` - List configurations
+- `POST /api/v1/configuration` - Create configuration
+- `GET /api/v1/configuration/{config_id}` - Get configuration
+- `PUT /api/v1/configuration/{config_id}` - Update configuration
+- `DELETE /api/v1/configuration/{config_id}` - Delete configuration
+- `POST /api/v1/configuration/{config_id}/deploy` - Deploy to device
+
+### Flashing
+- `POST /api/v1/flashing/flash` - Flash firmware to device
+- `POST /api/v1/flashing/flash-latest` - Flash latest compatible firmware
+- `GET /api/v1/flashing/jobs` - List flash jobs
+- `GET /api/v1/flashing/jobs/{job_id}` - Get flash job status
+- `DELETE /api/v1/flashing/jobs/{job_id}` - Cancel flash job
+- `POST /api/v1/flashing/erase/{device_id}` - Erase device
+- `WebSocket /api/v1/flashing/ws/progress/{job_id}` - Real-time progress
+
+## Configuration
+
+### Environment Variables
+
+Create a `.env` file based on `.env.example`:
+
+```env
+# AWS Configuration
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_REGION=us-west-2
+AWS_IOT_ENDPOINT=your-iot-endpoint.amazonaws.com
+
+# API Configuration
+API_HOST=0.0.0.0
+API_PORT=8000
+API_DEBUG=true
+
+# Logging
+LOG_LEVEL=INFO
+```
+
+### Device Types Supported
+
+- ESP32 (all variants)
+- ESP8266
+- ESP32-S2
+- ESP32-S3
+- ESP32-C3
+
+### Firmware Types
+
+- Application firmware
+- Bootloader
+- Partition table
+- Custom firmware
+
+## Development
+
+### Setting up Development Environment
+
+```bash
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Code formatting
+black .
+
+# Linting
+flake8 .
+
+# Type checking
+mypy .
+```
+
+### Project Structure
+
+- **Core Layer**: Contains business entities and use cases
+- **Adapters Layer**: Interfaces for external dependencies
+- **Infrastructure Layer**: Concrete implementations (ESPTool, AWS IoT)
+- **API Layer**: FastAPI application with routers
+- **Modules**: Specialized functionality (flash management)
+
+### Adding New Device Types
+
+1. Implement the `FlashingServiceInterface` in the infrastructure layer
+2. Register the new adapter in the dependencies
+3. Add device type to the entities
+
+### Adding New Features
+
+1. Define entities in `core/entities/`
+2. Create use cases in `core/use_cases/`
+3. Add interfaces in `adapters/interfaces/`
+4. Implement in `infrastructure/`
+5. Create API endpoints in `api/routers/`
+
+## Deployment
+
+### Docker (Coming Soon)
+
+```bash
+# Build image
+docker build -t bombercat-integrator .
+
+# Run container
+docker run -p 8000:8000 bombercat-integrator
+```
+
+### Production Considerations
+
+- Use a production WSGI server (Gunicorn)
+- Configure proper CORS settings
+- Set up SSL/TLS certificates
+- Use environment-specific configuration
+- Set up monitoring and logging
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Run the test suite
+6. Submit a pull request
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Support
+
+For support and questions:
+- Create an issue on GitHub
+- Contact: team@bombercat.com
+
+## Changelog
+
+### v0.1.0
+- Initial release
+- Basic device, firmware, and configuration management
+- ESP32/ESP8266 flashing support
+- AWS IoT Core integration
+- REST API with documentation
+- Real-time progress tracking

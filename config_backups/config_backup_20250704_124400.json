@@ -1,0 +1,9 @@
+{
+  "timestamp": "2025-07-04T12:44:00.391723",
+  "config": {
+    "mode": "client",
+    "wifi_ssid": "TestNetwork",
+    "wifi_password": "testpass",
+    "encryption_key": "0123456789ABCDEF0123456789ABCDEF"
+  }
+}

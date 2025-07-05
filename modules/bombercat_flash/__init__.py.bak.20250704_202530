@@ -1,0 +1,17 @@
+"""BomberCat Flash Module.
+
+This module provides firmware flashing capabilities for BomberCat devices,
+including ESP32, ESP8266, and other supported microcontrollers.
+"""
+
+from .flash_manager import FlashManager
+from .flash_service import FlashService
+from .progress_tracker import ProgressTracker
+
+__version__ = "0.1.0"
+
+__all__ = [
+    "FlashManager",
+    "FlashService",
+    "ProgressTracker",
+]

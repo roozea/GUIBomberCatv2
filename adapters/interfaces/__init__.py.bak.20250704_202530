@@ -1,0 +1,24 @@
+"""Interfaces package for adapters.
+
+Define interfaces para repositorios y servicios."""
+
+from .repositories import (
+    DeviceRepository,
+    FirmwareRepository,
+    ConfigurationRepository
+)
+from .services import (
+    FlashServiceInterface,
+    ConfigServiceInterface,
+    RelayServiceInterface,
+    MQTTServiceInterface
+)
+from .base_service import (
+    BaseService,
+    ServiceStatus,
+    WebSocketManagerInterface,
+    FlashServiceInterface as BaseFlashServiceInterface,
+    ConfigServiceInterface as BaseConfigServiceInterface,
+    RelayServiceInterface as BaseRelayServiceInterface,
+    MQTTServiceInterface as BaseMQTTServiceInterface
+)

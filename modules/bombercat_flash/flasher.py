@@ -1,0 +1,417 @@
+"""Flasher mejorado con progreso en tiempo real, validación de cabecera y wrapper asíncrono.
+
+Este módulo implementa las sub-tareas 4.1-4.5 del Flash Wizard:
+- Progreso en tiempo real con callbacks
+- Manejo robusto de errores específicos
+- Validación de cabecera de firmware
+- Verificación mejorada con CRC
+- Wrapper asíncrono thread-safe
+"""
+
+import asyncio
+import logging
+import zlib
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Optional, Callable, Dict, Any, Union
+
+import esptool
+from esptool import ESPLoader
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+from modules.bombercat_flash.progress import ProgressDelegate, ProgressPrinter, CallbackProgressDelegate
+from modules.bombercat_flash.errors import (
+    FlashError, PortBusyError, SyncError, FlashTimeout, 
+    ChecksumMismatch, InvalidFirmwareError, DeviceNotFoundError,
+    map_esptool_error
+)
+
+
+logger = logging.getLogger(__name__)
+
+
+class ESPFlasher:
+    """Flasher mejorado para dispositivos ESP32/ESP8266 con funcionalidades avanzadas.
+    
+    Características:
+    - Progreso en tiempo real con múltiples delegates
+    - Validación de cabecera de firmware
+    - Verificación mejorada con CRC
+    - Wrapper asíncrono thread-safe
+    - Manejo robusto de errores
+    """
+    
+    # Magic bytes para validación de cabecera ESP32
+    ESP32_MAGIC_BYTE = 0xE9
+    ESP32_MULTICORE_BYTE = 0x03
+    
+    def __init__(self, baud_rate: int = 460800, timeout: float = 120.0):
+        """Inicializa el flasher.
+        
+        Args:
+            baud_rate: Velocidad de baudios para comunicación serie
+            timeout: Timeout en segundos para operaciones de flasheo
+        """
+        self.baud_rate = baud_rate
+        self.timeout = timeout
+        self._flash_lock = asyncio.Lock()  # Para thread-safety
+        self._executor = ThreadPoolExecutor(max_workers=4)
+        
+    async def flash_device(
+        self,
+        port: str,
+        firmware_path: Union[str, Path],
+        progress_delegate: Optional[ProgressDelegate] = None,
+        flash_address: int = 0x1000,
+        verify: bool = True
+    ) -> bool:
+        """Flashea firmware a un dispositivo ESP de forma asíncrona.
+        
+        Args:
+            port: Puerto serie del dispositivo
+            firmware_path: Ruta al archivo de firmware
+            progress_delegate: Delegate para callbacks de progreso
+            flash_address: Dirección de memoria donde flashear
+            verify: Si verificar el firmware después del flasheo
+            
+        Returns:
+            True si el flasheo fue exitoso, False en caso contrario
+            
+        Raises:
+            FlashError: Error específico durante el flasheo
+        """
+        async with self._flash_lock:  # Garantizar thread-safety
+            try:
+                firmware_path = Path(firmware_path)
+                
+                # Validar archivo de firmware
+                if not firmware_path.exists():
+                    raise InvalidFirmwareError(f"Archivo de firmware no encontrado: {firmware_path}")
+                
+                # Validar cabecera del firmware
+                if not await self._validate_firmware_header_async(firmware_path):
+                    raise InvalidFirmwareError("Cabecera de firmware inválida")
+                
+                # Usar progress delegate por defecto si no se proporciona
+                if progress_delegate is None:
+                    progress_delegate = ProgressPrinter()
+                
+                # Ejecutar flasheo en thread separado
+                loop = asyncio.get_running_loop()
+                success = await loop.run_in_executor(
+                    self._executor,
+                    self._flash_sync,
+                    port,
+                    firmware_path,
+                    progress_delegate,
+                    flash_address
+                )
+                
+                if success and verify:
+                    # Verificar firmware después del flasheo
+                    verify_success = await self.verify_flash(port, firmware_path)
+                    if not verify_success:
+                        raise ChecksumMismatch("Verificación de firmware falló")
+                
+                return success
+                
+            except FlashError:
+                raise
+            except Exception as e:
+                mapped_error = map_esptool_error(e, "flash_device")
+                raise mapped_error
+    
+    def _flash_sync(
+        self,
+        port: str,
+        firmware_path: Path,
+        progress_delegate: ProgressDelegate,
+        flash_address: int
+    ) -> bool:
+        """Ejecuta el flasheo de forma síncrona.
+        
+        Args:
+            port: Puerto serie del dispositivo
+            firmware_path: Ruta al archivo de firmware
+            progress_delegate: Delegate para callbacks de progreso
+            flash_address: Dirección de memoria donde flashear
+            
+        Returns:
+            True si el flasheo fue exitoso
+        """
+        try:
+            progress_delegate.on_start("Iniciando flasheo")
+            
+            # Preparar argumentos para esptool
+            args = [
+                '--port', port,
+                '--baud', str(self.baud_rate),
+                'write_flash',
+                '--flash_mode', 'dio',
+                '--flash_freq', '40m',
+                '--flash_size', 'detect',
+                hex(flash_address),
+                str(firmware_path)
+            ]
+            
+            # Crear callback de progreso personalizado
+            def progress_callback(percent: float, message: str = ""):
+                progress_delegate.on_chunk(percent, message)
+            
+            # Ejecutar esptool con callback de progreso
+            result = self._execute_esptool_with_progress(args, progress_callback)
+            
+            if result == 0:
+                progress_delegate.on_end(True, "Flasheo completado exitosamente")
+                return True
+            else:
+                progress_delegate.on_end(False, "Flasheo falló")
+                return False
+                
+        except Exception as e:
+            progress_delegate.on_end(False, f"Error durante flasheo: {str(e)}")
+            raise map_esptool_error(e, "_flash_sync")
+    
+    def _execute_esptool_with_progress(
+        self,
+        args: list[str],
+        progress_callback: Callable[[float, str], None]
+    ) -> int:
+        """Ejecuta esptool con monitoreo de progreso.
+        
+        Args:
+            args: Argumentos para esptool
+            progress_callback: Callback para reportar progreso
+            
+        Returns:
+            Código de retorno de esptool
+        """
+        try:
+            # Monkey patch para capturar progreso de esptool
+            original_write = None
+            
+            def progress_write(self, data):
+                # Simular progreso basado en datos escritos
+                if hasattr(self, '_total_size') and hasattr(self, '_written_size'):
+                    self._written_size += len(data)
+                    percent = min(100.0, (self._written_size / self._total_size) * 100)
+                    progress_callback(percent, f"Escribiendo: {percent:.1f}%")
+                
+                return original_write(data)
+            
+            # Aplicar monkey patch temporalmente
+            if hasattr(ESPLoader, '_port'):
+                original_write = ESPLoader._port.write
+                ESPLoader._port.write = progress_write
+            
+            try:
+                # Ejecutar esptool
+                return esptool.main(args)
+            finally:
+                # Restaurar método original
+                if original_write:
+                    ESPLoader._port.write = original_write
+                    
+        except Exception as e:
+            logger.error(f"Error ejecutando esptool: {e}")
+            raise
+    
+    async def verify_flash(
+        self,
+        port: str,
+        firmware_path: Union[str, Path],
+        read_size: int = 4096
+    ) -> bool:
+        """Verifica el firmware flasheado leyendo y comparando CRC.
+        
+        Args:
+            port: Puerto serie del dispositivo
+            firmware_path: Ruta al archivo de firmware original
+            read_size: Cantidad de bytes a leer para verificación
+            
+        Returns:
+            True si la verificación es exitosa
+            
+        Raises:
+            ChecksumMismatch: Si el CRC no coincide
+        """
+        try:
+            firmware_path = Path(firmware_path)
+            
+            # Leer datos originales del firmware
+            with open(firmware_path, 'rb') as f:
+                original_data = f.read(read_size)
+            
+            # Calcular CRC del firmware original
+            original_crc = zlib.crc32(original_data) & 0xffffffff
+            
+            # Conectar al dispositivo y leer datos flasheados
+            loop = asyncio.get_running_loop()
+            device_data = await loop.run_in_executor(
+                self._executor,
+                self._read_flash_data,
+                port,
+                read_size
+            )
+            
+            # Calcular CRC de los datos leídos
+            device_crc = zlib.crc32(device_data) & 0xffffffff
+            
+            # Comparar CRCs
+            if original_crc != device_crc:
+                raise ChecksumMismatch(
+                    f"CRC mismatch: original={original_crc:08x}, device={device_crc:08x}"
+                )
+            
+            logger.info(f"Verificación exitosa: CRC={original_crc:08x}")
+            return True
+            
+        except ChecksumMismatch:
+            raise
+        except Exception as e:
+            raise map_esptool_error(e, "verify_flash")
+    
+    def _read_flash_data(self, port: str, size: int) -> bytes:
+        """Lee datos de la flash del dispositivo.
+        
+        Args:
+            port: Puerto serie del dispositivo
+            size: Cantidad de bytes a leer
+            
+        Returns:
+            Datos leídos de la flash
+        """
+        try:
+            # Conectar al dispositivo usando esptool
+            esp = ESPLoader.detect_chip(port, self.baud_rate)
+            esp.connect()
+            
+            # Leer datos de la flash
+            data = esp.read_flash(0x1000, size)  # Leer desde dirección típica
+            
+            esp.hard_reset()
+            return data
+            
+        except Exception as e:
+            raise map_esptool_error(e, "_read_flash_data")
+    
+    @staticmethod
+    def _validate_firmware_header(data: bytes) -> bool:
+        """Valida la cabecera del firmware ESP32.
+        
+        Args:
+            data: Primeros bytes del archivo de firmware
+            
+        Returns:
+            True si la cabecera es válida
+        """
+        if len(data) < 4:
+            return False
+        
+        # Verificar magic byte (byte 0 == 0xE9)
+        if data[0] != ESPFlasher.ESP32_MAGIC_BYTE:
+            return False
+        
+        # Verificar byte multicore (byte 3 == 0x03 para ESP32-S2 multicore)
+        if data[3] != ESPFlasher.ESP32_MULTICORE_BYTE:
+            logger.warning(f"Byte multicore inesperado: {data[3]:02x} (esperado: {ESPFlasher.ESP32_MULTICORE_BYTE:02x})")
+            # No fallar por esto, solo advertir
+        
+        return True
+    
+    async def _validate_firmware_header_async(self, firmware_path: Path) -> bool:
+        """Valida la cabecera del firmware de forma asíncrona.
+        
+        Args:
+            firmware_path: Ruta al archivo de firmware
+            
+        Returns:
+            True si la cabecera es válida
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            
+            def read_header():
+                with open(firmware_path, 'rb') as f:
+                    return f.read(4)
+            
+            header_data = await loop.run_in_executor(self._executor, read_header)
+            return self._validate_firmware_header(header_data)
+            
+        except Exception as e:
+            logger.error(f"Error validando cabecera: {e}")
+            return False
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10)
+    )
+    async def connect_device(self, port: str) -> bool:
+        """Conecta al dispositivo con reintentos automáticos.
+        
+        Args:
+            port: Puerto serie del dispositivo
+            
+        Returns:
+            True si la conexión es exitosa
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            
+            def try_connect():
+                esp = ESPLoader.detect_chip(port, self.baud_rate)
+                esp.connect()
+                esp.hard_reset()
+                return True
+            
+            return await loop.run_in_executor(self._executor, try_connect)
+            
+        except Exception as e:
+            raise map_esptool_error(e, "connect_device")
+    
+    async def erase_flash(self, port: str, progress_delegate: Optional[ProgressDelegate] = None) -> bool:
+        """Borra la flash del dispositivo.
+        
+        Args:
+            port: Puerto serie del dispositivo
+            progress_delegate: Delegate para callbacks de progreso
+            
+        Returns:
+            True si el borrado fue exitoso
+        """
+        async with self._flash_lock:
+            try:
+                if progress_delegate is None:
+                    progress_delegate = ProgressPrinter()
+                
+                loop = asyncio.get_running_loop()
+                
+                def erase_sync():
+                    progress_delegate.on_start("Iniciando borrado de flash")
+                    
+                    args = [
+                        '--port', port,
+                        '--baud', str(self.baud_rate),
+                        'erase_flash'
+                    ]
+                    
+                    result = esptool.main(args)
+                    
+                    if result == 0:
+                        progress_delegate.on_end(True, "Flash borrada exitosamente")
+                        return True
+                    else:
+                        progress_delegate.on_end(False, "Error borrando flash")
+                        return False
+                
+                return await loop.run_in_executor(self._executor, erase_sync)
+                
+            except Exception as e:
+                if progress_delegate:
+                    progress_delegate.on_end(False, f"Error: {str(e)}")
+                raise map_esptool_error(e, "erase_flash")
+    
+    def __del__(self):
+        """Limpia recursos al destruir el objeto."""
+        if hasattr(self, '_executor'):
+            self._executor.shutdown(wait=False)

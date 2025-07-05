@@ -1,0 +1,2 @@
+[console_scripts]
+bombercat-integrator = api.main:app

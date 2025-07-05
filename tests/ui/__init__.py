@@ -1,0 +1,1 @@
+"""Tests para el módulo UI del dashboard BomberCat."""

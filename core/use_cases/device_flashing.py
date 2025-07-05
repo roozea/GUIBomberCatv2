@@ -1,0 +1,231 @@
+"""Device flashing use cases."""
+
+from enum import Enum
+from typing import Optional, Callable, Any
+from uuid import UUID
+
+from core.entities.device import Device, DeviceStatus
+from core.entities.firmware import Firmware
+
+
+class FlashingStatus(Enum):
+    """Status of firmware flashing operation."""
+    PREPARING = "preparing"
+    ERASING = "erasing"
+    WRITING = "writing"
+    VERIFYING = "verifying"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class FlashingProgress:
+    """Progress information for flashing operation."""
+    
+    def __init__(
+        self,
+        status: FlashingStatus,
+        progress_percent: float = 0.0,
+        message: str = "",
+        error: Optional[str] = None,
+    ):
+        self.status = status
+        self.progress_percent = progress_percent
+        self.message = message
+        self.error = error
+
+
+class FlashingService:
+    """Abstract service interface for device flashing operations."""
+    
+    async def flash_firmware(
+        self,
+        device: Device,
+        firmware: Firmware,
+        progress_callback: Optional[Callable[[FlashingProgress], None]] = None,
+    ) -> bool:
+        """Flash firmware to device."""
+        raise NotImplementedError
+    
+    async def erase_device(self, device: Device) -> bool:
+        """Erase device flash memory."""
+        raise NotImplementedError
+    
+    async def verify_firmware(
+        self, device: Device, firmware: Firmware
+    ) -> bool:
+        """Verify firmware on device matches expected firmware."""
+        raise NotImplementedError
+    
+    async def read_device_info(self, device: Device) -> dict:
+        """Read device information (chip type, flash size, etc.)."""
+        raise NotImplementedError
+
+
+class DeviceFlashingUseCase:
+    """Use case for flashing firmware to devices."""
+    
+    def __init__(
+        self,
+        flashing_service: FlashingService,
+        device_repository: Any,  # DeviceRepository from device_management
+        firmware_repository: Any,  # FirmwareRepository from firmware_management
+    ):
+        self._flashing_service = flashing_service
+        self._device_repository = device_repository
+        self._firmware_repository = firmware_repository
+    
+    async def flash_device(
+        self,
+        device_id: UUID,
+        firmware_id: UUID,
+        progress_callback: Optional[Callable[[FlashingProgress], None]] = None,
+    ) -> bool:
+        """Flash firmware to a device."""
+        # Get device and firmware
+        device = await self._device_repository.find_by_id(device_id)
+        if not device:
+            raise ValueError("Device not found")
+        
+        firmware = await self._firmware_repository.find_by_id(firmware_id)
+        if not firmware:
+            raise ValueError("Firmware not found")
+        
+        # Validate device can be flashed
+        if not device.can_flash():
+            raise ValueError("Device cannot be flashed in current state")
+        
+        # Check firmware compatibility
+        if not firmware.is_compatible_with(device.device_type.value):
+            raise ValueError(
+                f"Firmware is not compatible with device type {device.device_type.value}"
+            )
+        
+        # Check firmware file exists
+        if not firmware.file_exists():
+            raise ValueError("Firmware file not found")
+        
+        # Update device status
+        device.update_status(DeviceStatus.FLASHING)
+        await self._device_repository.save(device)
+        
+        try:
+            # Perform flashing
+            success = await self._flashing_service.flash_firmware(
+                device, firmware, progress_callback
+            )
+            
+            if success:
+                # Update device with new firmware version
+                device.update_firmware(str(firmware.version))
+                device.update_status(DeviceStatus.READY)
+            else:
+                device.update_status(DeviceStatus.ERROR)
+            
+            await self._device_repository.save(device)
+            return success
+        
+        except Exception as e:
+            # Handle flashing error
+            device.update_status(DeviceStatus.ERROR)
+            await self._device_repository.save(device)
+            
+            if progress_callback:
+                progress_callback(
+                    FlashingProgress(
+                        status=FlashingStatus.FAILED,
+                        error=str(e),
+                    )
+                )
+            
+            raise
+    
+    async def erase_device(self, device_id: UUID) -> bool:
+        """Erase device flash memory."""
+        device = await self._device_repository.find_by_id(device_id)
+        if not device:
+            raise ValueError("Device not found")
+        
+        if not device.can_flash():
+            raise ValueError("Device cannot be erased in current state")
+        
+        # Update device status
+        device.update_status(DeviceStatus.FLASHING)
+        await self._device_repository.save(device)
+        
+        try:
+            success = await self._flashing_service.erase_device(device)
+            
+            if success:
+                # Clear firmware version after erase
+                device.firmware_version = None
+                device.update_status(DeviceStatus.CONNECTED)
+            else:
+                device.update_status(DeviceStatus.ERROR)
+            
+            await self._device_repository.save(device)
+            return success
+        
+        except Exception:
+            device.update_status(DeviceStatus.ERROR)
+            await self._device_repository.save(device)
+            raise
+    
+    async def verify_device_firmware(
+        self, device_id: UUID, firmware_id: UUID
+    ) -> bool:
+        """Verify firmware on device matches expected firmware."""
+        device = await self._device_repository.find_by_id(device_id)
+        if not device:
+            raise ValueError("Device not found")
+        
+        firmware = await self._firmware_repository.find_by_id(firmware_id)
+        if not firmware:
+            raise ValueError("Firmware not found")
+        
+        if not device.is_online():
+            raise ValueError("Device is not online")
+        
+        return await self._flashing_service.verify_firmware(device, firmware)
+    
+    async def get_device_info(self, device_id: UUID) -> dict:
+        """Get detailed device information."""
+        device = await self._device_repository.find_by_id(device_id)
+        if not device:
+            raise ValueError("Device not found")
+        
+        if not device.is_online():
+            raise ValueError("Device is not online")
+        
+        return await self._flashing_service.read_device_info(device)
+    
+    async def get_compatible_firmware(self, device_id: UUID) -> list[Firmware]:
+        """Get list of firmware compatible with device."""
+        device = await self._device_repository.find_by_id(device_id)
+        if not device:
+            raise ValueError("Device not found")
+        
+        return await self._firmware_repository.find_compatible(device.device_type.value)
+    
+    async def get_recommended_firmware(self, device_id: UUID) -> Optional[Firmware]:
+        """Get recommended firmware for device (latest compatible)."""
+        compatible_firmware = await self.get_compatible_firmware(device_id)
+        
+        if not compatible_firmware:
+            return None
+        
+        # Return latest version
+        return max(compatible_firmware, key=lambda fw: fw.version)
+    
+    def create_progress_callback(
+        self, callback_func: Callable[[str, float, str], None]
+    ) -> Callable[[FlashingProgress], None]:
+        """Create a progress callback wrapper."""
+        
+        def progress_callback(progress: FlashingProgress) -> None:
+            callback_func(
+                progress.status.value,
+                progress.progress_percent,
+                progress.message or progress.error or "",
+            )
+        
+        return progress_callback

@@ -1,0 +1,187 @@
+"""API endpoints para detección y gestión de dispositivos BomberCat.
+
+Este módulo proporciona endpoints FastAPI para la detección automática
+de dispositivos ESP32-S2 y operaciones relacionadas con el flashing.
+"""
+
+import logging
+from typing import List, Dict
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from modules.bombercat_flash.detector import DeviceDetector
+
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/flash", tags=["flash"])
+
+
+class DeviceInfo(BaseModel):
+    """Modelo de información de dispositivo detectado."""
+    port: str
+    description: str
+    hwid: str
+    chip_type: str = None
+
+
+class DetectionResponse(BaseModel):
+    """Respuesta de detección de dispositivos."""
+    devices: List[DeviceInfo]
+    count: int
+    message: str
+
+
+@router.get("/detect", response_model=DetectionResponse)
+async def detect_devices() -> DetectionResponse:
+    """Detecta dispositivos ESP32-S2 conectados.
+    
+    Escanea todos los puertos serie disponibles y devuelve una lista
+    de dispositivos ESP32-S2 detectados con su información.
+    
+    Returns:
+        DetectionResponse: Lista de dispositivos detectados con metadatos.
+        
+    Raises:
+        HTTPException: Si ocurre un error durante la detección.
+    """
+    logger.info("Iniciando detección de dispositivos ESP32-S2")
+    
+    try:
+        detector = DeviceDetector()
+        
+        # Obtener dispositivos potenciales (escaneo rápido)
+        potential_devices = detector.scan_ports()
+        
+        # Convertir a modelo Pydantic
+        device_list = [
+            DeviceInfo(
+                port=device['port'],
+                description=device['description'],
+                hwid=device['hwid']
+            )
+            for device in potential_devices
+        ]
+        
+        response = DetectionResponse(
+            devices=device_list,
+            count=len(device_list),
+            message=f"Se encontraron {len(device_list)} dispositivos ESP potenciales"
+        )
+        
+        logger.info(f"Detección completada: {len(device_list)} dispositivos encontrados")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error durante la detección de dispositivos: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno durante la detección: {str(e)}"
+        )
+
+
+@router.get("/detect/verified", response_model=DetectionResponse)
+async def detect_verified_devices() -> DetectionResponse:
+    """Detecta y verifica dispositivos ESP32-S2 conectados.
+    
+    Realiza detección completa incluyendo verificación de chip
+    usando esptool. Este endpoint es más lento pero más preciso.
+    
+    Returns:
+        DetectionResponse: Lista de dispositivos ESP32-S2 verificados.
+        
+    Raises:
+        HTTPException: Si ocurre un error durante la detección.
+    """
+    logger.info("Iniciando detección verificada de dispositivos ESP32-S2")
+    
+    try:
+        detector = DeviceDetector()
+        
+        # Obtener dispositivos verificados (más lento pero preciso)
+        verified_devices = detector.get_verified_devices()
+        
+        # Convertir a modelo Pydantic
+        device_list = [
+            DeviceInfo(
+                port=device['port'],
+                description=device['description'],
+                hwid=device['hwid'],
+                chip_type=device.get('chip_type')
+            )
+            for device in verified_devices
+        ]
+        
+        response = DetectionResponse(
+            devices=device_list,
+            count=len(device_list),
+            message=f"Se verificaron {len(device_list)} dispositivos ESP32-S2"
+        )
+        
+        logger.info(f"Detección verificada completada: {len(device_list)} dispositivos")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error durante la detección verificada: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno durante la detección verificada: {str(e)}"
+        )
+
+
+@router.get("/detect/{port}/chip")
+async def detect_chip_type(port: str) -> Dict[str, str]:
+    """Detecta el tipo de chip en un puerto específico.
+    
+    Args:
+        port: Puerto serie a verificar (ej: 'COM3', '/dev/ttyUSB0')
+        
+    Returns:
+        Dict con información del chip detectado.
+        
+    Raises:
+        HTTPException: Si no se puede detectar el chip o el puerto no existe.
+    """
+    logger.info(f"Detectando tipo de chip en puerto {port}")
+    
+    try:
+        detector = DeviceDetector()
+        chip_type = detector.detect_chip(port)
+        
+        if chip_type:
+            result = {
+                "port": port,
+                "chip_type": chip_type,
+                "supported": chip_type in detector.supported_chips,
+                "message": f"Chip {chip_type} detectado en {port}"
+            }
+            logger.info(f"Chip detectado exitosamente: {chip_type} en {port}")
+            return result
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No se pudo detectar chip ESP en el puerto {port}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error detectando chip en {port}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno detectando chip: {str(e)}"
+        )
+
+
+@router.get("/supported-chips")
+async def get_supported_chips() -> Dict[str, List[str]]:
+    """Obtiene lista de chips soportados por el detector.
+    
+    Returns:
+        Dict con la lista de chips soportados.
+    """
+    detector = DeviceDetector()
+    return {
+        "supported_chips": detector.supported_chips,
+        "count": len(detector.supported_chips)
+    }
