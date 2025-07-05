@@ -252,10 +252,10 @@ if __name__ == "__main__":
     try:
         asyncio.run(ft.app_async(
             target=dashboard_app,
-            name="dashboard",
+            name="",
             port=8550,
             view=ft.AppView.WEB_BROWSER,
-            web_renderer=ft.WebRenderer.HTML,
+            web_renderer=ft.WebRenderer.CANVAS_KIT,
         ))
     except Exception as e:
         print(f"❌ [ERROR] Exception in ft.app_async: {e}")
