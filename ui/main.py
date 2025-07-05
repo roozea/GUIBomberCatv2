@@ -189,43 +189,76 @@ class SimpleDashboard:
 
 async def dashboard_app(page: ft.Page):
     """Función principal del dashboard (async)."""
-    print("🚀 UI init")
-    logger.info("🚀 UI init")
-    
-    # Configurar página básica
-    page.title = "BomberCat Dashboard"
-    page.theme_mode = ft.ThemeMode.DARK
-    
-    # Mostrar mensaje HELLO simple
-    hello_text = ft.Text(
-        "HELLO",
-        size=48,
-        weight=ft.FontWeight.BOLD,
-        color=ft.Colors.GREEN,
-        text_align=ft.TextAlign.CENTER
-    )
-    
-    page.add(
-        ft.Container(
-            content=hello_text,
-            alignment=ft.alignment.center,
-            expand=True
+    try:
+        print("🚀 UI init start")
+        logger.info("🚀 UI init start")
+        
+        # Configurar página básica
+        page.title = "BomberCat Dashboard"
+        page.theme_mode = ft.ThemeMode.DARK
+        
+        print("📄 [DEBUG] Página configurada")
+        logger.info("📄 Página configurada")
+        
+        # Mostrar mensaje HELLO simple
+        hello_text = ft.Text(
+            "HELLO",
+            size=48,
+            weight=ft.FontWeight.BOLD,
+            color=ft.Colors.GREEN,
+            text_align=ft.TextAlign.CENTER
         )
-    )
-    
-    page.update()
-    print("✅ [DEBUG] Dashboard con HELLO mostrado")
-    logger.info("✅ Dashboard con HELLO mostrado")
+        
+        print("📝 [DEBUG] Texto HELLO creado")
+        logger.info("📝 Texto HELLO creado")
+        
+        page.add(
+            ft.Container(
+                content=hello_text,
+                alignment=ft.alignment.center,
+                expand=True
+            )
+        )
+        
+        print("➕ [DEBUG] Contenido agregado a página")
+        logger.info("➕ Contenido agregado a página")
+        
+        page.update()
+        print("✅ [DEBUG] Dashboard con HELLO mostrado")
+        logger.info("✅ Dashboard con HELLO mostrado")
+        
+    except Exception as e:
+        print(f"❌ [ERROR] Exception in dashboard_app: {e}")
+        logger.error(f"❌ Exception in dashboard_app: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Mostrar error en la página si es posible
+        try:
+            page.add(ft.Text(f"Error: {str(e)}", color=ft.Colors.RED))
+            page.update()
+        except Exception as page_error:
+            print(f"❌ [ERROR] Could not show error on page: {page_error}")
+            logger.error(f"❌ Could not show error on page: {page_error}")
 
 
 if __name__ == "__main__":
     logger.info("Iniciando aplicación BomberCat Dashboard...")
     print("🚀 [DEBUG] Iniciando aplicación BomberCat Dashboard...")
     
-    asyncio.run(ft.app_async(
-        target=dashboard_app,
-        name="dashboard",
-        port=8550,
-        view=ft.AppView.WEB_BROWSER,
-        web_renderer=ft.WebRenderer.HTML,
-    ))
+    print("📋 [DEBUG] Registering app with target=dashboard_app")
+    logger.info("📋 Registering app with target=dashboard_app")
+    
+    try:
+        asyncio.run(ft.app_async(
+            target=dashboard_app,
+            name="dashboard",
+            port=8550,
+            view=ft.AppView.WEB_BROWSER,
+            web_renderer=ft.WebRenderer.HTML,
+        ))
+    except Exception as e:
+        print(f"❌ [ERROR] Exception in ft.app_async: {e}")
+        logger.error(f"❌ Exception in ft.app_async: {e}")
+        import traceback
+        traceback.print_exc()
