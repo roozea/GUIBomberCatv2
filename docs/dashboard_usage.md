@@ -39,12 +39,12 @@ poetry install
 ```bash
 # Terminal 1: Arrancar backend FastAPI
 cd /ruta/al/proyecto
-python3 -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8001
+python3 -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 **Espera a ver estos mensajes antes de continuar:**
 ```
-INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 INFO:     Started reloader process
 INFO:     Started server process
 INFO:     Application startup complete.

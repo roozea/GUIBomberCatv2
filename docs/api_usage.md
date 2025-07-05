@@ -22,18 +22,18 @@ pip install fastapi uvicorn websockets pydantic
 
 ```bash
 # Desarrollo con auto-reload
-uvicorn api.main:app --reload --host 0.0.0.0 --port 8001
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Producción
-uvicorn api.main:app --host 0.0.0.0 --port 8001
+uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### URLs de Acceso
 
-- **API Base**: http://localhost:8001
-- **Documentación Swagger**: http://localhost:8001/docs
-- **Documentación ReDoc**: http://localhost:8001/redoc
-- **WebSocket**: ws://localhost:8001/ws
+- **API Base**: http://localhost:8000
+- **Documentación Swagger**: http://localhost:8000/docs
+- **Documentación ReDoc**: http://localhost:8000/redoc
+- **WebSocket**: ws://localhost:8000/ws
 
 ## Endpoints REST
 
@@ -41,7 +41,7 @@ uvicorn api.main:app --host 0.0.0.0 --port 8001
 
 ```bash
 # Obtener estado general
-curl -X GET "http://localhost:8001/status" \
+curl -X GET "http://localhost:8000/status" \
   -H "accept: application/json"
 ```
 
@@ -76,7 +76,7 @@ curl -X GET "http://localhost:8001/status" \
 
 ```bash
 # Flashear dispositivo
-curl -X POST "http://localhost:8001/flash" \
+curl -X POST "http://localhost:8000/flash" \
   -H "accept: application/json" \
   -H "Content-Type: application/json" \
   -d '{
@@ -99,7 +99,7 @@ curl -X POST "http://localhost:8001/flash" \
 
 ```bash
 # Actualizar configuración
-curl -X POST "http://localhost:8001/config" \
+curl -X POST "http://localhost:8000/config" \
   -H "accept: application/json" \
   -H "Content-Type: application/json" \
   -d '{
@@ -135,7 +135,7 @@ curl -X POST "http://localhost:8001/config" \
 #### Iniciar Relay
 
 ```bash
-curl -X POST "http://localhost:8001/relay/start" \
+curl -X POST "http://localhost:8000/relay/start" \
   -H "accept: application/json" \
   -H "Content-Type: application/json" \
   -d '{
@@ -148,7 +148,7 @@ curl -X POST "http://localhost:8001/relay/start" \
 #### Detener Relay
 
 ```bash
-curl -X POST "http://localhost:8001/relay/stop" \
+curl -X POST "http://localhost:8000/relay/stop" \
   -H "accept: application/json"
 ```
 
@@ -156,7 +156,7 @@ curl -X POST "http://localhost:8001/relay/stop" \
 
 ```bash
 # Verificar salud del servicio
-curl -X GET "http://localhost:8001/health"
+curl -X GET "http://localhost:8000/health"
 ```
 
 ## WebSocket
@@ -165,7 +165,7 @@ curl -X GET "http://localhost:8001/health"
 
 ```bash
 # Usando wscat (instalar con: npm install -g wscat)
-wscat -c ws://localhost:8001/ws
+wscat -c ws://localhost:8000/ws
 ```
 
 ### Comandos WebSocket
@@ -302,7 +302,7 @@ import json
 
 class WSManager:
     def __init__(self):
-        self.ws_url = "ws://localhost:8001/ws"
+        self.ws_url = "ws://localhost:8000/ws"
         
     async def connect(self):
         self.ws = await websocket.connect(self.ws_url)
@@ -353,7 +353,7 @@ Los logs se muestran en la consola con diferentes niveles:
 # test_websocket.sh
 
 echo "Probando WebSocket..."
-echo '{"type": "ping"}' | wscat -c ws://localhost:8001/ws
+echo '{"type": "ping"}' | wscat -c ws://localhost:8000/ws
 ```
 
 ### Script de Prueba REST
@@ -365,13 +365,13 @@ echo '{"type": "ping"}' | wscat -c ws://localhost:8001/ws
 echo "Probando endpoints REST..."
 
 # Health check
-curl -s http://localhost:8001/health | jq
+curl -s http://localhost:8000/health | jq
 
 # Status
-curl -s http://localhost:8001/status | jq
+curl -s http://localhost:8000/status | jq
 
 # Flash (simulado)
-curl -s -X POST http://localhost:8001/flash \
+curl -s -X POST http://localhost:8000/flash \
   -H "Content-Type: application/json" \
   -d '{"firmware_path": "/tmp/test.bin", "port": "/dev/ttyUSB0"}' | jq
 ```
@@ -382,7 +382,7 @@ curl -s -X POST http://localhost:8001/flash \
 
 ```bash
 # Verificar qué proceso usa el puerto
-lsof -i :8001
+lsof -i :8000
 
 # Cambiar puerto
 uvicorn api.main:app --port 8002

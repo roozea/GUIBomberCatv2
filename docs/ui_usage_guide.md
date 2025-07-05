@@ -8,8 +8,8 @@ La interfaz de usuario del BomberCat Integrator es una aplicación Flet que prop
 
 ### URLs de Acceso
 - **Interfaz Web:** http://localhost:8550
-- **API Backend:** http://localhost:8001
-- **Documentación API:** http://localhost:8001/docs
+- **API Backend:** http://localhost:8000
+- **Documentación API:** http://localhost:8000/docs
 
 ### Inicio de la Aplicación
 ```bash

@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Importaciones locales
 try:
-    from ui.state import StateManager, LogEntry, LogLevel, SystemStatus
+    from ui.state import StateManager, LogEntry, LogLevel
     from ui.components.dashboard_view import DashboardView
     from ui.websocket_manager import WSManager
 except ImportError as e:
@@ -71,7 +71,7 @@ class SimpleDashboard:
         page.window_min_height = 600
         
         # Crear WebSocket manager
-        self.ws_manager = WSManager("ws://localhost:8001/ws")
+        self.ws_manager = WSManager("ws://localhost:8000/ws")
         
         # Crear vista del dashboard
         self.dashboard_view = DashboardView(self.state_manager, self.ws_manager)
@@ -98,7 +98,7 @@ class SimpleDashboard:
         try:
             # Intentar conectar con timeout de 1 segundo
             connection_task = asyncio.create_task(self._connect_websocket())
-            await asyncio.wait_for(connection_task, timeout=1.0)
+            await asyncio.wait_for(connection_task, timeout=2.0)
             
         except asyncio.TimeoutError:
             logger.warning("Timeout conectando WebSocket - mostrando banner offline")
@@ -114,11 +114,11 @@ class SimpleDashboard:
         """Muestra banner de backend offline."""
         if self.page:
             offline_banner = ft.Banner(
-                bgcolor=ft.colors.ORANGE_100,
-                leading=ft.Icon(ft.icons.WIFI_OFF, color=ft.colors.ORANGE, size=40),
+                bgcolor=ft.colors.RED_100,
+                leading=ft.Icon(ft.icons.WIFI_OFF, color=ft.colors.RED, size=40),
                 content=ft.Text(
-                    "⚠️ Backend offline - Ejecutando en modo local. Inicia el backend para funcionalidad completa.",
-                    color=ft.colors.ORANGE_800
+                    "Backend offline",
+                    color=ft.colors.RED_800
                 ),
                 actions=[
                     ft.TextButton("Reintentar", on_click=lambda _: self._retry_connection()),
@@ -229,7 +229,7 @@ async def dashboard_app(page: ft.Page):
         ui_loaded_banner = ft.Banner(
             bgcolor=ft.colors.GREEN_100,
             leading=ft.Icon(ft.icons.CHECK_CIRCLE, color=ft.colors.GREEN, size=40),
-            content=ft.Text("✅ UI loaded - Dashboard cargado correctamente", color=ft.colors.GREEN_800),
+            content=ft.Text("✅ Dashboard Loaded ✅", color=ft.colors.GREEN_800),
             actions=[
                 ft.TextButton("OK", on_click=lambda _: page.close_banner())
             ]
